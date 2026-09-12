@@ -10,12 +10,32 @@ import { getUploadKeyRecord, incrementUploadKeyUsage } from './upload-keys';
 import { moderateAndCleanup } from './moderation';
 import { s3PutObject } from './s3-upload';
 import { clearFileCache } from './cache';
-import { abortMultipartUpload, completeMultipartUpload, startMultipartUpload, uploadMultipartPart } from './multipart';
+import {
+  MULTIPART_MAX_PARTS,
+  MULTIPART_PART_SIZE,
+  abortMultipartUpload,
+  completeMultipartUpload,
+  createMultipartCapability,
+  hashMultipartCapability,
+  startMultipartUpload,
+  uploadMultipartPart,
+} from './multipart';
 import { errorMessage } from './errors';
 import { normalizeUploadDirectory } from './storage-path';
 
 export const uploadPublicRoutes = new Hono<{ Bindings: Env }>();
 const SINGLE_UPLOAD_LIMIT = 20 * 1024 * 1024;
+const DEFAULT_PUBLIC_MULTIPART_LIMIT = 2 * 1024 * 1024 * 1024;
+const PUBLIC_MULTIPART_HARD_LIMIT = MULTIPART_PART_SIZE * MULTIPART_MAX_PARTS;
+
+function getPublicMultipartLimit(env: Env): number {
+  const configured = Number(env.PUBLIC_UPLOAD_MAX_BYTES);
+  return Number.isSafeInteger(configured)
+    && configured >= SINGLE_UPLOAD_LIMIT
+    && configured <= PUBLIC_MULTIPART_HARD_LIMIT
+    ? configured
+    : DEFAULT_PUBLIC_MULTIPART_LIMIT;
+}
 
 function getPublicUploadPath(env: Env): string {
   const p = env.PUBLIC_UPLOAD_PATH || 'uploads/public/';
@@ -107,7 +127,10 @@ uploadPublicRoutes.post('/init', async (c) => {
   let path = getPublicUploadPath(c.env);
 
   if (!filename) return c.json({ error: '缺少文件名' }, 400);
-  if (!Number.isFinite(body.size) || body.size <= 0) return c.json({ error: '文件大小无效' }, 400);
+  if (!Number.isSafeInteger(body.size) || body.size <= 0) return c.json({ error: '文件大小无效' }, 400);
+  if (body.size > getPublicMultipartLimit(c.env)) {
+    return c.json({ error: '文件超过公开上传大小限制' }, 413);
+  }
   if (!turnstile) return c.json({ error: '缺少人机验证' }, 400);
   if (!(await verifyTurnstile(turnstile, c.env.TURNSTILE_SECRET, ip))) {
     return c.json({ error: '人机验证失败' }, 403);
@@ -132,12 +155,15 @@ uploadPublicRoutes.post('/init', async (c) => {
 
   const key2 = await uniqueKey(engine, path, filename);
   const ct = getContentType(filename);
+  const uploadToken = createMultipartCapability();
   const uploadId = await startMultipartUpload(c.env, engine, key2, filename, ct, {
     uploadKeyId,
     uploadKeyLabel: keyLabel,
     source: uploadKeyId ? 'upload-key' : 'public',
+    expectedSize: body.size,
+    capabilityHash: await hashMultipartCapability(uploadToken),
   });
-  return c.json({ uploadId, key: key2 });
+  return c.json({ uploadId, key: key2, uploadToken });
 });
 
 // ── Upload part (no Turnstile needed) ──
@@ -145,16 +171,20 @@ uploadPublicRoutes.post('/part', async (c) => {
   const body = await c.req.parseBody();
   const uploadId = body['uploadId'] as string;
   const key = body['key'] as string;
+  const uploadToken = body['uploadToken'] as string;
   const partNumber = parseInt(body['partNumber'] as string, 10);
   const chunk = body['chunk'];
 
-  if (!uploadId || !key || !partNumber || !chunk) return c.json({ error: '缺少参数' }, 400);
+  if (!uploadId || !key || !uploadToken || !partNumber || !chunk) return c.json({ error: '缺少参数' }, 400);
   if (!(chunk instanceof File)) return c.json({ error: '无效的文件数据' }, 400);
 
   const engine = await createStorageEngine(c.env);
   const chunkBuf = await chunk.arrayBuffer();
   try {
-    const partResult = await uploadMultipartPart(c.env, engine, uploadId, key, partNumber, chunkBuf);
+    const partResult = await uploadMultipartPart(c.env, engine, uploadId, key, partNumber, chunkBuf, {
+      token: uploadToken,
+      requireCapability: true,
+    });
     return c.json(partResult);
   } catch (error) {
     return c.json({ error: errorMessage(error, '分片上传失败') }, 400);
@@ -163,15 +193,18 @@ uploadPublicRoutes.post('/part', async (c) => {
 
 // ── Complete multipart ──
 uploadPublicRoutes.post('/complete', async (c) => {
-  const body = await c.req.json<{ uploadId: string; key: string; parts: UploadPart[] }>();
-  const { uploadId, key, parts } = body;
+  const body = await c.req.json<{ uploadId: string; key: string; uploadToken: string; parts: UploadPart[] }>();
+  const { uploadId, key, uploadToken, parts } = body;
 
-  if (!uploadId || !key || !parts?.length) return c.json({ error: '缺少参数' }, 400);
+  if (!uploadId || !key || !uploadToken || !parts?.length) return c.json({ error: '缺少参数' }, 400);
 
   const engine = await createStorageEngine(c.env);
   let completed: Awaited<ReturnType<typeof completeMultipartUpload>>;
   try {
-    completed = await completeMultipartUpload(c.env, engine, uploadId, key, parts);
+    completed = await completeMultipartUpload(c.env, engine, uploadId, key, parts, {
+      token: uploadToken,
+      requireCapability: true,
+    });
   } catch (error) {
     return c.json({ error: errorMessage(error, '完成分片上传失败') }, 400);
   }
@@ -221,13 +254,20 @@ uploadPublicRoutes.post('/complete', async (c) => {
 
 // ── Abort ──
 uploadPublicRoutes.post('/abort', async (c) => {
-  const body = await c.req.json<{ uploadId: string; key: string }>();
-  const { uploadId, key } = body;
+  const body = await c.req.json<{ uploadId: string; key: string; uploadToken: string }>();
+  const { uploadId, key, uploadToken } = body;
 
-  if (!uploadId || !key) return c.json({ error: '缺少参数' }, 400);
+  if (!uploadId || !key || !uploadToken) return c.json({ error: '缺少参数' }, 400);
 
   const engine = await createStorageEngine(c.env);
-  await abortMultipartUpload(c.env, engine, uploadId, key);
+  try {
+    await abortMultipartUpload(c.env, engine, uploadId, key, {
+      token: uploadToken,
+      requireCapability: true,
+    });
+  } catch (error) {
+    return c.json({ error: errorMessage(error, '取消分片上传失败') }, 400);
+  }
 
   return c.json({ ok: true });
 });

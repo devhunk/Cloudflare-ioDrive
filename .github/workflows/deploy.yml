@@ -78,6 +78,7 @@ jobs:
           [vars]
           SITE_ID = "production"
           ADMIN_USER = "admin"
+          PUBLIC_DOMAIN = "drive.iodevo.com"
           R2_PUBLIC_DOMAIN = "r2.iodevo.com"
           R2_BUCKET = "iodrive-apac"
           R2_ACCOUNT_ID = "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
@@ -86,6 +87,7 @@ jobs:
           S3_BUCKET = "${{ secrets.S3_BUCKET }}"
           S3_REGION = "${{ secrets.S3_REGION }}"
           PUBLIC_UPLOAD_PATH = "uploads/public/"
+          PUBLIC_UPLOAD_MAX_BYTES = "2147483648"
 
           [[r2_buckets]]
           binding = "DRIVE"

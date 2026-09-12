@@ -7,7 +7,14 @@ import { getAllS3ConfigsAsync } from './storage';
 import { assertSafeStorageKey } from './storage-path';
 
 const MULTIPART_PREFIX = '_multipart/';
-const MAX_PART_SIZE = 25 * 1024 * 1024;
+export const MULTIPART_PART_SIZE = 20 * 1024 * 1024;
+export const MULTIPART_MAX_PARTS = 10_000;
+const MULTIPART_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+export interface MultipartAccess {
+  token?: string;
+  requireCapability?: boolean;
+}
 
 export interface MultipartMetadata {
   key: string;
@@ -19,6 +26,9 @@ export interface MultipartMetadata {
   source?: UploadLogEntry['source'];
   uploadKeyId?: string;
   uploadKeyLabel?: string;
+  expectedSize?: number;
+  expires?: string;
+  capabilityHash?: string;
 }
 
 function metadataKey(uploadId: string): string {
@@ -58,6 +68,71 @@ async function loadMultipartMetadata(env: Env, uploadId: string): Promise<Multip
   return metadata;
 }
 
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function createMultipartCapability(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
+}
+
+export async function hashMultipartCapability(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index++) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+async function assertMultipartAccess(
+  metadata: MultipartMetadata,
+  access: MultipartAccess = {},
+  allowExpired = false,
+): Promise<void> {
+  if (!metadata.capabilityHash) {
+    if (access.requireCapability) throw new Error('分片上传会话凭证无效');
+  } else {
+    if (!access.token) throw new Error('缺少分片上传会话凭证');
+    const actualHash = await hashMultipartCapability(access.token);
+    if (!constantTimeEqual(metadata.capabilityHash, actualHash)) {
+      throw new Error('分片上传会话凭证无效');
+    }
+  }
+  if (!allowExpired && metadata.expires && Date.parse(metadata.expires) <= Date.now()) {
+    throw new Error('分片上传会话已过期');
+  }
+}
+
+function expectedPartCount(expectedSize: number): number {
+  return Math.ceil(expectedSize / MULTIPART_PART_SIZE);
+}
+
+function assertExpectedPart(metadata: MultipartMetadata, partNumber: number, byteLength: number): void {
+  if (!metadata.expectedSize) return;
+  const count = expectedPartCount(metadata.expectedSize);
+  if (partNumber > count) throw new Error('分片编号超出文件范围');
+  const expectedBytes = partNumber === count
+    ? metadata.expectedSize - (count - 1) * MULTIPART_PART_SIZE
+    : MULTIPART_PART_SIZE;
+  if (byteLength !== expectedBytes) throw new Error('分片大小与声明的文件大小不匹配');
+}
+
+function assertExpectedParts(metadata: MultipartMetadata, parts: UploadPart[]): void {
+  if (!metadata.expectedSize) return;
+  const count = expectedPartCount(metadata.expectedSize);
+  if (parts.length !== count || parts.some((part, index) => part.partNumber !== index + 1)) {
+    throw new Error('分片列表与声明的文件大小不匹配');
+  }
+}
+
 async function deleteMultipartState(env: Env, uploadId: string): Promise<void> {
   const meta = createMetadataStore(env);
   const prefix = partPrefix(uploadId);
@@ -71,13 +146,13 @@ async function deleteMultipartState(env: Env, uploadId: string): Promise<void> {
 }
 
 function validateParts(parts: UploadPart[]): UploadPart[] {
-  if (!Array.isArray(parts) || parts.length === 0 || parts.length > 10_000) {
+  if (!Array.isArray(parts) || parts.length === 0 || parts.length > MULTIPART_MAX_PARTS) {
     throw new Error('分片列表无效');
   }
   const sorted = [...parts].sort((a, b) => a.partNumber - b.partNumber);
   const seen = new Set<number>();
   for (const part of sorted) {
-    if (!Number.isInteger(part.partNumber) || part.partNumber < 1 || part.partNumber > 10_000 || typeof part.etag !== 'string' || !part.etag || seen.has(part.partNumber)) {
+    if (!Number.isInteger(part.partNumber) || part.partNumber < 1 || part.partNumber > MULTIPART_MAX_PARTS || typeof part.etag !== 'string' || !part.etag || seen.has(part.partNumber)) {
       throw new Error('分片列表无效');
     }
     seen.add(part.partNumber);
@@ -91,7 +166,7 @@ export async function startMultipartUpload(
   key: string,
   filename: string,
   contentType: string,
-  extra: Pick<MultipartMetadata, 'source' | 'uploadKeyId' | 'uploadKeyLabel'> = {},
+  extra: Pick<MultipartMetadata, 'source' | 'uploadKeyId' | 'uploadKeyLabel' | 'expectedSize' | 'capabilityHash'> = {},
 ): Promise<string> {
   assertSafeStorageKey(key);
   const primary = await engine.createMultipartUpload(key, { contentType });
@@ -111,6 +186,7 @@ export async function startMultipartUpload(
       key,
       filename,
       created: new Date().toISOString(),
+      expires: new Date(Date.now() + MULTIPART_SESSION_TTL_MS).toISOString(),
       syncUploadIds,
       ...extra,
     } satisfies MultipartMetadata);
@@ -131,16 +207,19 @@ export async function uploadMultipartPart(
   key: string,
   partNumber: number,
   data: ArrayBuffer,
+  access: MultipartAccess = {},
 ): Promise<UploadPart> {
-  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10_000) {
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > MULTIPART_MAX_PARTS) {
     throw new Error('分片编号无效');
   }
-  if (data.byteLength === 0 || data.byteLength > MAX_PART_SIZE) {
+  if (data.byteLength === 0 || data.byteLength > MULTIPART_PART_SIZE) {
     throw new Error('分片大小无效');
   }
 
   const metadata = await loadMultipartMetadata(env, uploadId);
   if (metadata.key !== key) throw new Error('分片上传路径不匹配');
+  await assertMultipartAccess(metadata, access);
+  assertExpectedPart(metadata, partNumber, data.byteLength);
   assertSafeStorageKey(metadata.key);
 
   const primaryUploadId = await getPrimaryUploadId(env, engine, metadata, uploadId);
@@ -162,11 +241,14 @@ export async function completeMultipartUpload(
   uploadId: string,
   key: string,
   parts: UploadPart[],
+  access: MultipartAccess = {},
 ): Promise<{ object: { key: string; size: number }; metadata: MultipartMetadata; syncFailures: string[] }> {
   const metadata = await loadMultipartMetadata(env, uploadId);
   if (metadata.key !== key) throw new Error('分片上传路径不匹配');
+  await assertMultipartAccess(metadata, access);
   assertSafeStorageKey(metadata.key);
   const validatedParts = validateParts(parts);
+  assertExpectedParts(metadata, validatedParts);
 
   const primaryUploadId = await getPrimaryUploadId(env, engine, metadata, uploadId);
   const object = await engine.resumeMultipartUpload(metadata.key, primaryUploadId).complete(validatedParts);
@@ -206,11 +288,13 @@ export async function abortMultipartUpload(
   engine: StorageEngine,
   uploadId: string,
   key: string,
+  access: MultipartAccess = {},
 ): Promise<void> {
   const meta = createMetadataStore(env);
   const metadata = await meta.get<MultipartMetadata>(metadataKey(uploadId));
   if (!metadata) return;
   if (metadata.key !== key) throw new Error('分片上传路径不匹配');
+  await assertMultipartAccess(metadata, access, true);
 
   const primaryUploadId = await getPrimaryUploadId(env, engine, metadata, uploadId);
   const tasks: Array<Promise<unknown>> = [engine.resumeMultipartUpload(metadata.key, primaryUploadId).abort()];

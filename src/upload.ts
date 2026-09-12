@@ -96,13 +96,16 @@ uploadRoutes.post('/init', async (c) => {
   }
 
   if (!filename) return c.json({ error: '缺少文件名' }, 400);
-  if (!Number.isFinite(size) || size <= 0) return c.json({ error: '文件大小无效' }, 400);
+  if (!Number.isSafeInteger(size) || size <= 0) return c.json({ error: '文件大小无效' }, 400);
 
   const engine = await createStorageEngine(c.env);
   const key = await uniqueKey(engine, path, filename);
   const contentType = getContentType(filename);
 
-  const uploadId = await startMultipartUpload(c.env, engine, key, filename, contentType, { source: 'dashboard' });
+  const uploadId = await startMultipartUpload(c.env, engine, key, filename, contentType, {
+    source: 'dashboard',
+    expectedSize: size,
+  });
   return c.json({ uploadId, key });
 });
 

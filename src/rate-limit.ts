@@ -15,7 +15,13 @@ export const rateLimitMiddleware = (): MiddlewareHandler<{ Bindings: Env }> => {
         }
       } catch (err) {
         console.error('Rate limiter check failed:', err);
-        // 防火墙限流服务异常时优雅降级，允许访问
+        const isCostSensitiveWrite = c.req.method !== 'GET'
+          && c.req.method !== 'HEAD'
+          && c.req.method !== 'OPTIONS'
+          && c.req.path.startsWith('/api/upload');
+        if (isCostSensitiveWrite) {
+          return c.json({ error: '上传保护服务暂时不可用，请稍后重试' }, 503);
+        }
       }
     }
     await next();

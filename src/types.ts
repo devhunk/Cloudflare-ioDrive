@@ -22,6 +22,7 @@ export interface Env {
   TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET: string;
   PUBLIC_UPLOAD_PATH?: string;
+  PUBLIC_UPLOAD_MAX_BYTES?: string; // 公开分片上传上限，默认 2 GiB
 
   // Legacy single S3 (向后兼容)
   S3_ENDPOINT?: string;

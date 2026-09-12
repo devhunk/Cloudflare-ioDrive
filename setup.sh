@@ -327,8 +327,10 @@ routes = [{ pattern = "${ROUTE_PREFIX}.${DOMAIN}/*", zone_name = "${DOMAIN}" }]
 [vars]
 SITE_ID = "${WORKER_NAME}"
 ADMIN_USER = "${ADMIN_USER}"
+PUBLIC_DOMAIN = "${ROUTE_PREFIX}.${DOMAIN}"
 TURNSTILE_SITE_KEY = "${TURNSTILE_SITE_KEY}"
 PUBLIC_UPLOAD_PATH = "uploads/public/"
+PUBLIC_UPLOAD_MAX_BYTES = "2147483648"
 EOF
 
 # R2 相关配置

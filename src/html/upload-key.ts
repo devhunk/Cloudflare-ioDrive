@@ -180,14 +180,14 @@ export function renderUploadKeyPage(keyId: string, siteKey: string): string {
     async function upMulti(f,idx){
       var r=await fetch('/api/upload-public/init',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:f.name,size:f.size,path:uploadPath,turnstile:tsToken,uploadKeyId:KEY_ID})});
       if(!r.ok)throw new Error('无法开始上传');
-      var d=await r.json(),uid=d.uploadId,key=d.key;
+      var d=await r.json(),uid=d.uploadId,key=d.key,ut=d.uploadToken;
       var tp=Math.ceil(f.size/PS),parts=[],pp=new Array(tp).fill(0),t0=Date.now(),q=[];
       for(var i=0;i<tp;i++){
         (function(pi,pn){
           var s=pi*PS,e=Math.min(s+PS,f.size),ch=f.slice(s,e);
           q.push(function(){
             return new Promise(function(ok,no){
-              var fd=new FormData();fd.append('uploadId',uid);fd.append('key',key);fd.append('partNumber',String(pn));fd.append('chunk',ch);
+              var fd=new FormData();fd.append('uploadId',uid);fd.append('key',key);fd.append('uploadToken',ut);fd.append('partNumber',String(pn));fd.append('chunk',ch);
               var x=new XMLHttpRequest();x.open('POST','/api/upload-public/part');
               x.upload.onprogress=function(ev){
                 if(ev.lengthComputable){
@@ -203,9 +203,9 @@ export function renderUploadKeyPage(keyId: string, siteKey: string): string {
           });
         })(i,i+1);
       }
-      try{await conc(q,MC)}catch(e){fetch('/api/upload-public/abort',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uploadId:uid,key:key})}).catch(function(){});throw e}
+      try{await conc(q,MC)}catch(e){fetch('/api/upload-public/abort',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uploadId:uid,key:key,uploadToken:ut})}).catch(function(){});throw e}
       parts.sort(function(a,b){return a.partNumber-b.partNumber});
-      var cr=await fetch('/api/upload-public/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uploadId:uid,key:key,parts:parts})});
+      var cr=await fetch('/api/upload-public/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uploadId:uid,key:key,uploadToken:ut,parts:parts})});
       if(!cr.ok)throw new Error('上传完成失败');
     }
 

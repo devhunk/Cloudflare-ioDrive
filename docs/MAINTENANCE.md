@@ -28,6 +28,11 @@ npm run check
 
 JWTs are scoped to `SITE_ID`. Changing `SITE_ID` invalidates existing sessions.
 
+`PUBLIC_DOMAIN` must be the Worker hostname without a scheme. WebDAV uses it for
+internal authenticated callbacks. Public multipart uploads are capped by
+`PUBLIC_UPLOAD_MAX_BYTES` (2 GiB by default), bound to a 24-hour capability, and
+must use 20 MiB parts except for the final part.
+
 ## Database changes
 
 Create a new numbered SQL file instead of editing an applied migration. CI applies migrations when `CLOUDFLARE_D1_API_TOKEN` is configured with D1 Edit permission; otherwise apply them manually before deploying code:
