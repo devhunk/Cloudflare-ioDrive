@@ -1,6 +1,7 @@
 name: Build and Deploy to Cloudflare
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -39,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: quality
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
