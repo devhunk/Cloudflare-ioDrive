@@ -97,7 +97,7 @@ fi
 
 # API Token
 echo -e "\n${YELLOW}获取方式: Cloudflare Dashboard → 我的个人资料 → API 令牌 → 创建令牌${NC}"
-echo -e "${YELLOW}推荐使用「编辑 Cloudflare Workers」模板${NC}"
+echo -e "${YELLOW}令牌至少需要 Workers Scripts:Edit、D1:Edit；自动创建 R2 时还需要 R2:Edit${NC}"
 read -rsp "$(echo -e "${BOLD}请输入 Cloudflare API Token: ${NC}")" API_TOKEN
 echo
 if [ -z "$API_TOKEN" ]; then

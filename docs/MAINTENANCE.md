@@ -30,7 +30,7 @@ JWTs are scoped to `SITE_ID`. Changing `SITE_ID` invalidates existing sessions.
 
 ## Database changes
 
-Create a new numbered SQL file instead of editing an applied migration, then apply migrations before deploying code:
+Create a new numbered SQL file instead of editing an applied migration. CI applies migrations when `CLOUDFLARE_D1_API_TOKEN` is configured with D1 Edit permission; otherwise apply them manually before deploying code:
 
 ```bash
 npx wrangler d1 migrations apply META_DB --remote

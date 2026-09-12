@@ -1266,6 +1266,7 @@ npm run deploy
    - `CLOUDFLARE_API_TOKEN`：Cloudflare API 令牌（Workers、D1、R2 部署权限）
    - `CLOUDFLARE_ACCOUNT_ID`：Cloudflare 账户 ID
    - `META_DB_ID`：生产 D1 数据库 ID
+   - `CLOUDFLARE_D1_API_TOKEN`：可选；启用 CI 自动迁移时使用，需 D1 Edit 权限
    - `ADMIN_PASS`：生产管理员密码
    - `JWT_SECRET`：生产 JWT 签名密钥
    - `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET`：可选的人机验证配置

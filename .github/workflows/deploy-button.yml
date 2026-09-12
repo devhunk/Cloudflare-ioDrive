@@ -84,6 +84,10 @@ jobs:
             echo "❌ 缺少 Secret: META_DB_ID"
             exit 1
           fi
+          if [ -z "${{ secrets.CLOUDFLARE_D1_API_TOKEN }}" ]; then
+            echo "❌ 缺少 Secret: CLOUDFLARE_D1_API_TOKEN"
+            exit 1
+          fi
           if [ -z "${{ secrets.R2_ACCESS_KEY }}" ]; then
             echo "❌ 缺少 Secret: R2_ACCESS_KEY"
             exit 1
@@ -233,7 +237,7 @@ jobs:
 
       - name: 应用 D1 数据库迁移
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_D1_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler d1 migrations apply META_DB --remote
 
