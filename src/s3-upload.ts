@@ -161,7 +161,7 @@ export async function s3AbortMultipart(
   };
   headers['Authorization'] = await signRequest(cfg, 'DELETE', fullPath, headers, 'UNSIGNED-PAYLOAD');
   const res = await fetch(fullUrl, { method: 'DELETE', headers });
-  return res.ok;
+  return res.ok || res.status === 404;
 }
 
 // ── AWS Signature V4 (header-based) ───────

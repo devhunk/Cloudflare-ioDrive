@@ -299,7 +299,11 @@ async function abortMultipartResources(
     const syncUploadId = getSyncUploadId(metadata, config);
     if (syncUploadId) tasks.push(s3AbortMultipart(config, metadata.key, syncUploadId));
   }
-  await Promise.allSettled(tasks);
+  const results = await Promise.allSettled(tasks);
+  const failed = results.some(result =>
+    result.status === 'rejected' || (result.status === 'fulfilled' && result.value === false)
+  );
+  if (failed) throw new Error('部分存储后端未能取消分片上传，状态已保留以便重试');
   await deleteMultipartState(env, uploadId);
 }
 
@@ -333,8 +337,12 @@ export async function cleanupExpiredMultipartUploads(
     if (!uploadId || uploadId.includes('/')) continue;
     const metadata = await meta.get<MultipartMetadata>(key);
     if (!metadata?.expires || Date.parse(metadata.expires) > Date.now()) continue;
-    await abortMultipartResources(env, engine, uploadId, metadata);
-    cleaned++;
+    try {
+      await abortMultipartResources(env, engine, uploadId, metadata);
+      cleaned++;
+    } catch (error) {
+      console.error('Expired multipart cleanup retry failed:', error);
+    }
   }
   return cleaned;
 }

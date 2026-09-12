@@ -61,10 +61,6 @@ uploadPublicRoutes.post('/single', async (c) => {
 
   const engine = await createStorageEngine(c.env);
   const meta = createMetadataStore(c.env);
-  c.executionCtx.waitUntil(
-    cleanupExpiredMultipartUploads(c.env, engine)
-      .catch(error => console.error('Expired multipart cleanup failed:', error)),
-  );
 
   let keyLabel: string | undefined;
   if (uploadKeyId) {
@@ -143,6 +139,10 @@ uploadPublicRoutes.post('/init', async (c) => {
 
   const engine = await createStorageEngine(c.env);
   const meta = createMetadataStore(c.env);
+  c.executionCtx.waitUntil(
+    cleanupExpiredMultipartUploads(c.env, engine)
+      .catch(error => console.error('Expired multipart cleanup failed:', error)),
+  );
 
   let keyLabel: string | undefined;
   if (uploadKeyId) {

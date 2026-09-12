@@ -512,6 +512,7 @@ routes = [{ pattern = "YOUR_DOMAIN/*", zone_name = "YOUR_ZONE" }]
 [vars]
 SITE_ID = "production"
 ADMIN_USER = "admin"
+APP_DOMAIN = "YOUR_WORKER_DOMAIN"
 R2_PUBLIC_DOMAIN = "YOUR_R2_PUBLIC_DOMAIN"
 R2_BUCKET = "YOUR_R2_BUCKET"
 R2_ACCOUNT_ID = "YOUR_R2_ACCOUNT_ID"
@@ -587,6 +588,7 @@ npm run deploy
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `SITE_ID` | 部署实例唯一标识，用于缓存和 JWT 隔离 | `production` |
+| `APP_DOMAIN` | Worker 对外域名，WebDAV 内部回调使用；不含协议 | `drive.example.com` |
 | `ADMIN_USER` | 管理员用户名 | `admin` |
 | `R2_PUBLIC_DOMAIN` | R2 公开访问域名 | `r2.example.com` |
 | `R2_BUCKET` | R2 存储桶名称 | `iodrive` |
@@ -615,6 +617,7 @@ npm run deploy
 | `S3_ACCESS_KEY` | S3 Access Key（向后兼容） | - |
 | `S3_SECRET_KEY` | S3 Secret Key（向后兼容） | - |
 | `PUBLIC_UPLOAD_PATH` | 公共上传默认路径 | `uploads/public/` |
+| `PUBLIC_UPLOAD_MAX_BYTES` | 公共分片上传上限（字节） | `2147483648` |
 | `WEBDAV_ENABLED` | WebDAV 总开关（`true` / `false`） | `false` |
 | `WEBDAV_USER` | WebDAV HTTP Basic 用户名（建议用 `wrangler secret put` 注入） | - |
 | `WEBDAV_PASS` | WebDAV HTTP Basic 密码（建议用 `wrangler secret put` 注入） | - |

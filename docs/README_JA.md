@@ -512,6 +512,7 @@ routes = [{ pattern = "YOUR_DOMAIN/*", zone_name = "YOUR_ZONE" }]
 [vars]
 SITE_ID = "production"
 ADMIN_USER = "admin"
+APP_DOMAIN = "YOUR_WORKER_DOMAIN"
 R2_PUBLIC_DOMAIN = "YOUR_R2_PUBLIC_DOMAIN"
 R2_BUCKET = "YOUR_R2_BUCKET"
 R2_ACCOUNT_ID = "YOUR_R2_ACCOUNT_ID"
@@ -587,6 +588,7 @@ npm run deploy
 | 変数 | 説明 | 例 |
 |------|------|------|
 | `SITE_ID` | キャッシュと JWT を分離するデプロイ固有 ID | `production` |
+| `APP_DOMAIN` | WebDAV 内部コールバック用 Worker ホスト名（プロトコルなし） | `drive.example.com` |
 | `ADMIN_USER` | 管理者ユーザー名 | `admin` |
 | `R2_PUBLIC_DOMAIN` | R2 公開アクセスドメイン | `r2.example.com` |
 | `R2_BUCKET` | R2 バケット名 | `iodrive` |
@@ -613,6 +615,7 @@ npm run deploy
 | `S3_ACCESS_KEY` | S3 アクセスキー（シークレット） | - |
 | `S3_SECRET_KEY` | S3 シークレットキー（シークレット） | - |
 | `PUBLIC_UPLOAD_PATH` | デフォルトのパブリックアップロードパス | `uploads/public/` |
+| `PUBLIC_UPLOAD_MAX_BYTES` | 公開マルチパートアップロード上限（バイト） | `2147483648` |
 | `WEBDAV_ENABLED` | WebDAV マスタースイッチ（`true` / `false`） | `false` |
 | `WEBDAV_USER` | WebDAV HTTP Basic ユーザー名（`wrangler secret put` で注入推奨） | - |
 | `WEBDAV_PASS` | WebDAV HTTP Basic パスワード（`wrangler secret put` で注入推奨） | - |

@@ -30,7 +30,9 @@ JWTs are scoped to `SITE_ID`. Changing `SITE_ID` invalidates existing sessions.
 
 `APP_DOMAIN` must be the Worker hostname without a scheme. WebDAV uses it for
 internal authenticated callbacks. `PUBLIC_DOMAIN` and `R2_PUBLIC_DOMAIN` are
-reserved for direct object-storage domains. Public multipart uploads are capped by
+reserved for direct object-storage domains. When upgrading an older deployment,
+move a Worker hostname from `PUBLIC_DOMAIN` to `APP_DOMAIN`; keep `PUBLIC_DOMAIN`
+only when it is an actual object-storage domain. Public multipart uploads are capped by
 `PUBLIC_UPLOAD_MAX_BYTES` (2 GiB by default), bound to a 24-hour capability, and
 must use 20 MiB parts except for the final part. New upload initialization also
 opportunistically aborts up to four expired multipart sessions.

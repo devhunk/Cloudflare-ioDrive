@@ -512,6 +512,7 @@ routes = [{ pattern = "YOUR_DOMAIN/*", zone_name = "YOUR_ZONE" }]
 [vars]
 SITE_ID = "production"
 ADMIN_USER = "admin"
+APP_DOMAIN = "YOUR_WORKER_DOMAIN"
 R2_PUBLIC_DOMAIN = "YOUR_R2_PUBLIC_DOMAIN"
 R2_BUCKET = "YOUR_R2_BUCKET"
 R2_ACCOUNT_ID = "YOUR_R2_ACCOUNT_ID"
@@ -587,6 +588,7 @@ After deployment, visit `https://YOUR_DOMAIN` to start using ioDrive.
 | Variable | Description | Example |
 |------|------|------|
 | `SITE_ID` | Unique deployment ID for cache and JWT isolation | `production` |
+| `APP_DOMAIN` | Worker hostname used by internal WebDAV callbacks; omit the scheme | `drive.example.com` |
 | `ADMIN_USER` | Admin username | `admin` |
 | `R2_PUBLIC_DOMAIN` | R2 public access domain | `r2.example.com` |
 | `R2_BUCKET` | R2 bucket name | `iodrive` |
@@ -613,6 +615,7 @@ After deployment, visit `https://YOUR_DOMAIN` to start using ioDrive.
 | `S3_ACCESS_KEY` | S3 Access Key (secret) | - |
 | `S3_SECRET_KEY` | S3 Secret Key (secret) | - |
 | `PUBLIC_UPLOAD_PATH` | Default public upload path | `uploads/public/` |
+| `PUBLIC_UPLOAD_MAX_BYTES` | Public multipart upload limit in bytes | `2147483648` |
 | `WEBDAV_ENABLED` | WebDAV master switch (`true` / `false`) | `false` |
 | `WEBDAV_USER` | WebDAV HTTP Basic username (recommend injecting via `wrangler secret put`) | - |
 | `WEBDAV_PASS` | WebDAV HTTP Basic password (recommend injecting via `wrangler secret put`) | - |
