@@ -2,7 +2,7 @@ import type { Env, UploadPart, UploadLogEntry } from './types';
 import type { S3Config } from './s3-upload';
 import { s3AbortMultipart, s3CompleteMultipart, s3CreateMultipart, s3UploadPart } from './s3-upload';
 import type { StorageEngine } from './storage-engine';
-import { createMetadataStore } from './metadata-store';
+import { CATEGORY, createMetadataStore } from './metadata-store';
 import { getAllS3ConfigsAsync } from './storage';
 import { assertSafeStorageKey } from './storage-path';
 
@@ -10,6 +10,7 @@ const MULTIPART_PREFIX = '_multipart/';
 export const MULTIPART_PART_SIZE = 20 * 1024 * 1024;
 export const MULTIPART_MAX_PARTS = 10_000;
 const MULTIPART_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const EXPIRED_MULTIPART_CLEANUP_LIMIT = 4;
 
 export interface MultipartAccess {
   token?: string;
@@ -283,19 +284,12 @@ export async function completeMultipartUpload(
   return { object, metadata, syncFailures };
 }
 
-export async function abortMultipartUpload(
+async function abortMultipartResources(
   env: Env,
   engine: StorageEngine,
   uploadId: string,
-  key: string,
-  access: MultipartAccess = {},
+  metadata: MultipartMetadata,
 ): Promise<void> {
-  const meta = createMetadataStore(env);
-  const metadata = await meta.get<MultipartMetadata>(metadataKey(uploadId));
-  if (!metadata) return;
-  if (metadata.key !== key) throw new Error('分片上传路径不匹配');
-  await assertMultipartAccess(metadata, access, true);
-
   const primaryUploadId = await getPrimaryUploadId(env, engine, metadata, uploadId);
   const tasks: Array<Promise<unknown>> = [engine.resumeMultipartUpload(metadata.key, primaryUploadId).abort()];
   if (primaryUploadId !== uploadId) {
@@ -307,4 +301,40 @@ export async function abortMultipartUpload(
   }
   await Promise.allSettled(tasks);
   await deleteMultipartState(env, uploadId);
+}
+
+export async function abortMultipartUpload(
+  env: Env,
+  engine: StorageEngine,
+  uploadId: string,
+  key: string,
+  access: MultipartAccess = {},
+): Promise<void> {
+  const metadata = await createMetadataStore(env).get<MultipartMetadata>(metadataKey(uploadId));
+  if (!metadata) return;
+  if (metadata.key !== key) throw new Error('分片上传路径不匹配');
+  await assertMultipartAccess(metadata, access, true);
+  await abortMultipartResources(env, engine, uploadId, metadata);
+}
+
+export async function cleanupExpiredMultipartUploads(
+  env: Env,
+  engine: StorageEngine,
+): Promise<number> {
+  const meta = createMetadataStore(env);
+  const expiredKeys = await meta.listExpired(
+    CATEGORY.MULTIPART,
+    Math.floor(Date.now() / 1000),
+    EXPIRED_MULTIPART_CLEANUP_LIMIT,
+  );
+  let cleaned = 0;
+  for (const key of expiredKeys) {
+    const uploadId = key.startsWith(MULTIPART_PREFIX) ? key.slice(MULTIPART_PREFIX.length) : '';
+    if (!uploadId || uploadId.includes('/')) continue;
+    const metadata = await meta.get<MultipartMetadata>(key);
+    if (!metadata?.expires || Date.parse(metadata.expires) > Date.now()) continue;
+    await abortMultipartResources(env, engine, uploadId, metadata);
+    cleaned++;
+  }
+  return cleaned;
 }

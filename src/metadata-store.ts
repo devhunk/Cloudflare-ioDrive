@@ -83,6 +83,7 @@ export interface MetadataStore {
   incrementCounter<T = unknown>(key: string, field: string): Promise<T | null>;
   delete(key: string | string[]): Promise<void>;
   list(prefix: string, options?: ListOptions): Promise<ListResult>;
+  listExpired(category: Category, nowSeconds: number, limit?: number): Promise<string[]>;
   /** 返回底层实现标识 */
   readonly kind: 'd1';
 }
@@ -207,6 +208,20 @@ export class D1MetadataStore implements MetadataStore {
     const keys = rows.map(r => r.id);
     const nextCursor = keys.length === limit ? keys[keys.length - 1] : undefined;
     return { keys, cursor: nextCursor };
+  }
+
+  async listExpired(category: Category, nowSeconds: number, limit = 10): Promise<string[]> {
+    const safeLimit = Math.max(1, Math.min(Math.floor(limit), 100));
+    const rows = await this.db
+      .prepare(
+        `SELECT id FROM kv
+         WHERE category = ? AND expires_at IS NOT NULL AND expires_at <= ?
+         ORDER BY expires_at ASC LIMIT ?`
+      )
+      .bind(category, Math.floor(nowSeconds), safeLimit)
+      .all<{ id: string }>()
+      .then(result => result.results);
+    return rows.map(row => row.id);
   }
 }
 

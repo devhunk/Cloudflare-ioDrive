@@ -8,7 +8,14 @@ import { createStorageEngine } from './storage-engine';
 import { moderateAndCleanup } from './moderation';
 import { s3PutObject } from './s3-upload';
 import { clearFileCache } from './cache';
-import { abortMultipartUpload, completeMultipartUpload, startMultipartUpload, uploadMultipartPart } from './multipart';
+import {
+  MULTIPART_PART_SIZE,
+  abortMultipartUpload,
+  cleanupExpiredMultipartUploads,
+  completeMultipartUpload,
+  startMultipartUpload,
+  uploadMultipartPart,
+} from './multipart';
 import { errorMessage } from './errors';
 import { normalizeUploadDirectory } from './storage-path';
 
@@ -99,6 +106,10 @@ uploadRoutes.post('/init', async (c) => {
   if (!Number.isSafeInteger(size) || size <= 0) return c.json({ error: '文件大小无效' }, 400);
 
   const engine = await createStorageEngine(c.env);
+  c.executionCtx.waitUntil(
+    cleanupExpiredMultipartUploads(c.env, engine)
+      .catch(error => console.error('Expired multipart cleanup failed:', error)),
+  );
   const key = await uniqueKey(engine, path, filename);
   const contentType = getContentType(filename);
 
@@ -120,6 +131,7 @@ uploadRoutes.post('/part', async (c) => {
 
   if (!uploadId || !key || !partNumber || !chunk) return c.json({ error: '缺少参数' }, 400);
   if (!(chunk instanceof File)) return c.json({ error: '无效的文件数据' }, 400);
+  if (chunk.size === 0 || chunk.size > MULTIPART_PART_SIZE) return c.json({ error: '分片大小无效' }, 413);
 
   const engine = await createStorageEngine(c.env);
   const chunkBuf = await chunk.arrayBuffer();

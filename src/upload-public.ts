@@ -15,6 +15,7 @@ import {
   MULTIPART_PART_SIZE,
   abortMultipartUpload,
   completeMultipartUpload,
+  cleanupExpiredMultipartUploads,
   createMultipartCapability,
   hashMultipartCapability,
   startMultipartUpload,
@@ -60,6 +61,10 @@ uploadPublicRoutes.post('/single', async (c) => {
 
   const engine = await createStorageEngine(c.env);
   const meta = createMetadataStore(c.env);
+  c.executionCtx.waitUntil(
+    cleanupExpiredMultipartUploads(c.env, engine)
+      .catch(error => console.error('Expired multipart cleanup failed:', error)),
+  );
 
   let keyLabel: string | undefined;
   if (uploadKeyId) {
@@ -177,6 +182,7 @@ uploadPublicRoutes.post('/part', async (c) => {
 
   if (!uploadId || !key || !uploadToken || !partNumber || !chunk) return c.json({ error: '缺少参数' }, 400);
   if (!(chunk instanceof File)) return c.json({ error: '无效的文件数据' }, 400);
+  if (chunk.size === 0 || chunk.size > MULTIPART_PART_SIZE) return c.json({ error: '分片大小无效' }, 413);
 
   const engine = await createStorageEngine(c.env);
   const chunkBuf = await chunk.arrayBuffer();

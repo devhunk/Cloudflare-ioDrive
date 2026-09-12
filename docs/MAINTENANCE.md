@@ -32,7 +32,8 @@ JWTs are scoped to `SITE_ID`. Changing `SITE_ID` invalidates existing sessions.
 internal authenticated callbacks. `PUBLIC_DOMAIN` and `R2_PUBLIC_DOMAIN` are
 reserved for direct object-storage domains. Public multipart uploads are capped by
 `PUBLIC_UPLOAD_MAX_BYTES` (2 GiB by default), bound to a 24-hour capability, and
-must use 20 MiB parts except for the final part.
+must use 20 MiB parts except for the final part. New upload initialization also
+opportunistically aborts up to four expired multipart sessions.
 
 ## Database changes
 
