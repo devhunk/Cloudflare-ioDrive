@@ -12,44 +12,44 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: iodrive-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build-and-test:
-    name: Build & Test
+  quality:
+    name: Type Check & Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v7
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
-          cache: 'npm'
-
+          cache: npm
       - name: Install dependencies
         run: npm ci
-
-      - name: Type check and build
-        run: npm test
+      - name: Type check and dry-run build
+        run: npm run check
 
   deploy-main:
     name: Deploy Production
     runs-on: ubuntu-latest
-    needs: build-and-test
+    timeout-minutes: 20
+    needs: quality
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v7
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
-          cache: 'npm'
-
+          cache: npm
       - name: Install dependencies
         run: npm ci
-
       - name: Validate required deployment secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -63,17 +63,20 @@ jobs:
           test -n "$META_DB_ID" || { echo "Missing META_DB_ID"; exit 1; }
           test -n "$ADMIN_PASS" || { echo "Missing ADMIN_PASS"; exit 1; }
           test -n "$JWT_SECRET" || { echo "Missing JWT_SECRET"; exit 1; }
-
       - name: Create production config
         run: |
           cat > wrangler.toml <<'EOF'
           name = "iodrive"
           main = "src/index.ts"
-          compatibility_date = "2026-09-07"
+          compatibility_date = "2026-09-12"
           compatibility_flags = ["nodejs_compat"]
+          workers_dev = false
+          preview_urls = false
           account_id = "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
           routes = [{ pattern = "drive.iodevo.com/*", zone_name = "iodevo.com" }]
+
           [vars]
+          SITE_ID = "production"
           ADMIN_USER = "admin"
           R2_PUBLIC_DOMAIN = "r2.iodevo.com"
           R2_BUCKET = "iodrive-apac"
@@ -83,15 +86,21 @@ jobs:
           S3_BUCKET = "${{ secrets.S3_BUCKET }}"
           S3_REGION = "${{ secrets.S3_REGION }}"
           PUBLIC_UPLOAD_PATH = "uploads/public/"
+
           [[r2_buckets]]
           binding = "DRIVE"
           bucket_name = "iodrive-apac"
-          [observability.logs]
+
+          [observability]
           enabled = true
+          [observability.logs]
           invocation_logs = true
+          head_sampling_rate = 1
+          [observability.traces]
+          enabled = true
+          head_sampling_rate = 0.01
           EOF
 
-          # Append CACHE_KV namespace if secret is present
           if [ -n "${{ secrets.CACHE_KV_ID }}" ]; then
             cat >> wrangler.toml <<'EOF'
 
@@ -101,17 +110,13 @@ jobs:
           EOF
           fi
 
-          # D1 metadata is required by the application
           cat >> wrangler.toml <<'EOF'
 
           [[d1_databases]]
           binding = "META_DB"
           database_name = "iodrive-meta"
           database_id = "${{ secrets.META_DB_ID }}"
-          EOF
-
-          # Append RATE_LIMITER rate limit config
-          cat >> wrangler.toml <<'EOF'
+          migrations_dir = "database/migrations"
 
           [[ratelimits]]
           name = "RATE_LIMITER"
@@ -120,72 +125,80 @@ jobs:
           limit = 100
           period = 60
           EOF
-
-      - name: Upload secrets
+      - name: Apply production database migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler d1 migrations apply META_DB --remote
+      - name: Upload production secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          if [ -n "${{ secrets.ADMIN_PASS }}" ]; then echo "${{ secrets.ADMIN_PASS }}" | npx wrangler secret put ADMIN_PASS; fi
+          echo "${{ secrets.ADMIN_PASS }}" | npx wrangler secret put ADMIN_PASS
+          echo "${{ secrets.JWT_SECRET }}" | npx wrangler secret put JWT_SECRET
           if [ -n "${{ secrets.TURNSTILE_SECRET }}" ]; then echo "${{ secrets.TURNSTILE_SECRET }}" | npx wrangler secret put TURNSTILE_SECRET; fi
-          if [ -n "${{ secrets.JWT_SECRET }}" ]; then echo "${{ secrets.JWT_SECRET }}" | npx wrangler secret put JWT_SECRET; fi
           if [ -n "${{ secrets.R2_ACCESS_KEY }}" ]; then echo "${{ secrets.R2_ACCESS_KEY }}" | npx wrangler secret put R2_ACCESS_KEY; fi
           if [ -n "${{ secrets.R2_SECRET_KEY }}" ]; then echo "${{ secrets.R2_SECRET_KEY }}" | npx wrangler secret put R2_SECRET_KEY; fi
           if [ -n "${{ secrets.S3_ACCESS_KEY }}" ]; then echo "${{ secrets.S3_ACCESS_KEY }}" | npx wrangler secret put S3_ACCESS_KEY; fi
           if [ -n "${{ secrets.S3_SECRET_KEY }}" ]; then echo "${{ secrets.S3_SECRET_KEY }}" | npx wrangler secret put S3_SECRET_KEY; fi
-
       - name: Deploy to production
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
-
       - name: Success
         run: echo "✅ https://drive.iodevo.com"
 
   deploy-demo:
-    name: Deploy Demo
+    name: Deploy Read-only Demo
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: deploy-main
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
-          cache: 'npm'
-
-      - run: npm ci
-
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Create demo config
         run: |
           cat > wrangler.toml <<'EOF'
           name = "iodrive-demo"
           main = "src/index.ts"
-          compatibility_date = "2026-09-07"
+          compatibility_date = "2026-09-12"
           compatibility_flags = ["nodejs_compat"]
+          workers_dev = false
+          preview_urls = false
           account_id = "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
           routes = [{ pattern = "demo.iodevo.com/*", zone_name = "iodevo.com" }]
+
           [vars]
-          ADMIN_USER = "admin"
-          R2_PUBLIC_DOMAIN = "r2.iodevo.com"
+          SITE_ID = "demo"
+          DEMO_MODE = "true"
+          ADMIN_USER = "disabled"
           R2_BUCKET = "iodrive-demo"
-          R2_ACCOUNT_ID = "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"
-          TURNSTILE_SITE_KEY = "${{ secrets.TURNSTILE_SITE_KEY }}"
-          S3_ENDPOINT = "${{ secrets.S3_ENDPOINT }}"
-          S3_BUCKET = "${{ secrets.S3_BUCKET }}"
-          S3_REGION = "${{ secrets.S3_REGION }}"
           PUBLIC_UPLOAD_PATH = "uploads/public/"
+
           [[r2_buckets]]
           binding = "DRIVE"
           bucket_name = "iodrive-demo"
-          [observability.logs]
+
+          [observability]
           enabled = true
+          [observability.logs]
           invocation_logs = true
+          head_sampling_rate = 1
+          [observability.traces]
+          enabled = true
+          head_sampling_rate = 0.01
           EOF
 
-          # Append CACHE_KV namespace if secret is present
           if [ -n "${{ secrets.CACHE_KV_ID }}" ]; then
             cat >> wrangler.toml <<'EOF'
 
@@ -195,17 +208,13 @@ jobs:
           EOF
           fi
 
-          # Demo metadata is isolated from production
           cat >> wrangler.toml <<'EOF'
 
           [[d1_databases]]
           binding = "META_DB"
           database_name = "iodrive-demo-meta"
           database_id = "e0c9ba9d-4907-469f-a9a0-f4ee1b25bc5d"
-          EOF
-
-          # Append RATE_LIMITER rate limit config
-          cat >> wrangler.toml <<'EOF'
+          migrations_dir = "database/migrations"
 
           [[ratelimits]]
           name = "RATE_LIMITER"
@@ -214,26 +223,16 @@ jobs:
           limit = 100
           period = 60
           EOF
-
-      - name: Upload secrets
+      - name: Apply demo database migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          echo "${{ secrets.ADMIN_PASS }}" | npx wrangler secret put ADMIN_PASS
-          if [ -n "${{ secrets.TURNSTILE_SECRET }}" ]; then echo "${{ secrets.TURNSTILE_SECRET }}" | npx wrangler secret put TURNSTILE_SECRET; fi
-          if [ -n "${{ secrets.JWT_SECRET }}" ]; then echo "${{ secrets.JWT_SECRET }}" | npx wrangler secret put JWT_SECRET; fi
-          if [ -n "${{ secrets.R2_ACCESS_KEY }}" ]; then echo "${{ secrets.R2_ACCESS_KEY }}" | npx wrangler secret put R2_ACCESS_KEY; fi
-          if [ -n "${{ secrets.R2_SECRET_KEY }}" ]; then echo "${{ secrets.R2_SECRET_KEY }}" | npx wrangler secret put R2_SECRET_KEY; fi
-          if [ -n "${{ secrets.S3_ACCESS_KEY }}" ]; then echo "${{ secrets.S3_ACCESS_KEY }}" | npx wrangler secret put S3_ACCESS_KEY; fi
-          if [ -n "${{ secrets.S3_SECRET_KEY }}" ]; then echo "${{ secrets.S3_SECRET_KEY }}" | npx wrangler secret put S3_SECRET_KEY; fi
-
+        run: npx wrangler d1 migrations apply META_DB --remote
       - name: Deploy to demo
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
-
       - name: Success
         run: echo "✅ https://demo.iodevo.com"

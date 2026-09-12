@@ -5,9 +5,11 @@
   "scripts": {
     "dev": "wrangler dev",
     "typecheck": "tsc --noEmit",
-    "build": "wrangler deploy src/index.ts --name iodrive --compatibility-date 2026-09-07 --dry-run --outdir=dist",
-    "test": "npm run typecheck && npm run build",
-    "deploy": "wrangler deploy"
+    "build": "wrangler deploy src/index.ts --name iodrive --compatibility-date 2026-09-12 --dry-run --outdir=dist",
+    "check": "npm run typecheck && npm run build",
+    "test": "npm run check",
+    "deploy": "wrangler deploy",
+    "cf-types": "wrangler types"
   },
   "dependencies": {
     "hono": "^4.0.0",
@@ -17,5 +19,8 @@
     "@cloudflare/workers-types": "^4.0.0",
     "typescript": "^5.0.0",
     "wrangler": "^4.107.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

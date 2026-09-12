@@ -11,6 +11,8 @@
 import { Hono } from 'hono';
 import { SignJWT } from 'jose';
 import type { Env } from './types';
+import { JWT_ISSUER, jwtAudience } from './jwt-scope';
+import { isDemoEnvironment } from './demo-mode';
 import { createStorageEngine } from './storage-engine';
 import { clearFileCache } from './cache';
 import { propfindResponse, propstatOk, type DavItem } from './webdav-xml';
@@ -100,9 +102,12 @@ async function requireAuth(c: any): Promise<Response | null> {
 // ── 内部 JWT 生成（用于 WebDAV → API 调用） ─────
 
 async function mintInternalJWT(env: Env, ttlSeconds = 300): Promise<string> {
+  if (!env.JWT_SECRET) throw new Error('JWT_SECRET is required for WebDAV');
   const secret = new TextEncoder().encode(env.JWT_SECRET);
-  return await new SignJWT({ sub: 'webdav', role: 'admin' })
+  return await new SignJWT({ sub: 'admin', role: 'admin', actor: 'webdav' })
     .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(JWT_ISSUER)
+    .setAudience(jwtAudience(env))
     .setIssuedAt()
     .setExpirationTime(`${ttlSeconds}s`)
     .sign(secret);
@@ -128,7 +133,7 @@ async function internalFetch(env: Env, path: string, init: RequestInit = {}): Pr
 // ── Demo 拦截 ─────────────────────────
 
 webdavRoutes.use('*', async (c, next) => {
-  if ((c.req.header('host') || '').startsWith('demo.')) {
+  if (isDemoEnvironment(c.env, c.req.header('host'))) {
     return c.text('demo mode', 403);
   }
   await next();

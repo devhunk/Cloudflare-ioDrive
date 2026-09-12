@@ -272,7 +272,7 @@ Every upload is logged in detail:
 
 - **D1 metadata database**: The `META_DB` binding is required for accounts, shares, logs, upload keys, and multipart sessions
 - **Single-Table Key-Value Design**: Inspired by ImgBed's simplified pattern, all metadata (shares, download logs, upload logs, upload keys, config, multipart sessions, moderation logs) is stored in a single `kv` table
-- **Explicit Initialization**: Run `database/init.sql` before deployment instead of creating tables in request handlers
+- **Explicit Initialization**: Run `database/migrations/` before deployment instead of creating tables in request handlers
 - **Visible Failures**: D1 errors propagate instead of silently splitting metadata across backends
 
 ### 🔌 WebDAV Drive Mount
@@ -505,11 +505,12 @@ Edit `wrangler.toml` with your settings:
 ```toml
 name = "iodrive"
 main = "src/index.ts"
-compatibility_date = "2026-09-07"
+compatibility_date = "2026-09-12"
 compatibility_flags = ["nodejs_compat"]
 routes = [{ pattern = "YOUR_DOMAIN/*", zone_name = "YOUR_ZONE" }]
 
 [vars]
+SITE_ID = "production"
 ADMIN_USER = "admin"
 R2_PUBLIC_DOMAIN = "YOUR_R2_PUBLIC_DOMAIN"
 R2_BUCKET = "YOUR_R2_BUCKET"
@@ -585,11 +586,12 @@ After deployment, visit `https://YOUR_DOMAIN` to start using ioDrive.
 
 | Variable | Description | Example |
 |------|------|------|
+| `SITE_ID` | Unique deployment ID for cache and JWT isolation | `production` |
 | `ADMIN_USER` | Admin username | `admin` |
 | `R2_PUBLIC_DOMAIN` | R2 public access domain | `r2.example.com` |
 | `R2_BUCKET` | R2 bucket name | `iodrive` |
-| `R2_ACCOUNT_ID` | Cloudflare account ID | `b06463110442db176b96e67a7fd4eb8e` |
-| `TURNSTILE_SITE_KEY` | Turnstile site key (public) | `0x4AAAAAADnkUbPb8iGro2Vh` |
+| `R2_ACCOUNT_ID` | Cloudflare account ID | `YOUR_ACCOUNT_ID` |
+| `TURNSTILE_SITE_KEY` | Turnstile site key (public) | `YOUR_TURNSTILE_SITE_KEY` |
 
 #### Required Secrets (wrangler secret)
 
@@ -624,9 +626,14 @@ After deployment, visit `https://YOUR_DOMAIN` to start using ioDrive.
 binding = "META_DB"
 database_name = "iodrive-meta"
 database_id = "<your-d1-uuid>"
+migrations_dir = "database/migrations"
 ```
 
-Initialize this database with `database/init.sql` before deployment.
+Apply versioned migrations before deployment:
+
+```bash
+npx wrangler d1 migrations apply META_DB --remote
+```
 
 ### Route Configuration
 
@@ -657,11 +664,7 @@ binding = "CACHE_KV"
 id = "your-kv-namespace-id"
 ```
 
-> ⚠️ **Multi-instance deployment note:** If you deploy multiple ioDrive instances under the same Cloudflare account (e.g., production + demo) and they share the same KV namespace (same `CACHE_KV` `id`), **each instance must have a unique `R2_BUCKET` value**.
->
-> ioDrive uses `R2_BUCKET` as a cache isolation key. The cache key format is `file_index:{R2_BUCKET}:{backend}:{prefix}`. If multiple instances share the same `R2_BUCKET`, their file list caches will overwrite each other, causing Site A to display Site B's files.
->
-> **Recommended:** Assign a separate KV namespace to each instance, or ensure each `R2_BUCKET` value is unique.
+> ⚠️ **Multi-instance deployment note:** Instances sharing a KV namespace must use different `SITE_ID` values. Separate KV namespaces remain the safest option.
 
 ### CORS Configuration
 
@@ -684,7 +687,7 @@ drive/
 │   └── workflows/
 │       └── ci.yml                    # GitHub Actions CI/CD configuration
 ├── database/
-│   └── init.sql                      # D1 Schema (used when D1 is enabled)
+│   └── migrations/0001_init.sql      # Initial versioned D1 migration
 ├── docs/
 │   ├── README_EN.md                  # English documentation
 │   ├── README_JA.md                  # Japanese documentation
@@ -1241,9 +1244,9 @@ npm run deploy
 
 The project includes a CI/CD pipeline (`.github/workflows/deploy.yml`):
 
-- **Push to `main` branch** → Auto-deploy the same verified commit to production and demo
-- **Push to `demo` branch** → Run type checks and the dry-run build only
-- **PR to `main` or `demo`** → Auto-run type check and tests
+- **Push to `main` branch** → Check, migrate, and deploy production followed by the read-only Demo
+- **PR to `main` or `demo`** → Run type checks and the dry-run build only
+- **Remote `demo` branch** → Kept as a legacy branch and does not deploy
 
 #### Configuring GitHub Actions
 

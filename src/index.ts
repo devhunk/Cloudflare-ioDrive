@@ -28,6 +28,7 @@ import { moderationAdminRoutes } from './moderation-admin';
 import { rateLimitMiddleware } from './rate-limit';
 import { getSafeImageContentType } from './upload-utils';
 import { assertSafeStorageKey } from './storage-path';
+import { isDemoEnvironment, isDemoWrite } from './demo-mode';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -45,43 +46,30 @@ app.use('*', async (c, next) => {
 app.use('/api/*', cors());
 
 
-// ── Demo site hostname ────────────────────
+// ── Demo environment boundary ──────────────
 
-const DEMO_HOST = 'demo.iodevo.com';
-const isDemoHost = (c: Context<{ Bindings: Env }>) => (c.req.header('host') || '') === DEMO_HOST;
+const isDemoRequest = (c: Context<{ Bindings: Env }>) =>
+  isDemoEnvironment(c.env, c.req.header('host'));
 
 app.use('*', async (c, next) => {
-  if (isDemoHost(c) && c.req.path === '/') {
-    return c.html(renderDemo());
+  if (isDemoRequest(c)) {
+    if (c.req.path === '/') return c.html(renderDemo());
+    if (c.req.path === '/login') return c.redirect('/dashboard');
   }
   await next();
 });
 
-// 演示站禁止实际上传文件
-app.use('/api/upload/*', async (c, next) => {
-  if (isDemoHost(c)) return c.json({ error: '演示环境禁止实际上传文件' }, 403);
-  await next();
-});
-app.use('/api/upload-public/*', async (c, next) => {
-  if (isDemoHost(c)) return c.json({ error: '演示环境禁止实际上传文件' }, 403);
-  await next();
-});
-app.use('/api/imgbed/upload', async (c, next) => {
-  if (isDemoHost(c)) return c.json({ error: '演示环境禁止实际上传文件' }, 403);
-  await next();
-});
-
-// 演示站禁止删除操作
-app.use('/api/*', async (c, next) => {
-  if (isDemoHost(c) && c.req.method === 'DELETE') {
-    return c.json({ error: '演示环境禁止删除操作' }, 403);
+// Demo is deny-by-default for every write, including API, PicGo and WebDAV.
+app.use('*', async (c, next) => {
+  if (isDemoRequest(c) && isDemoWrite(c.req.method)) {
+    return c.json({ error: '演示环境为只读模式' }, 403);
   }
   await next();
 });
 
 // 演示站数据 mock
 app.use('/api/*', async (c, next) => {
-  if (isDemoHost(c) && c.req.method === 'GET') {
+  if (isDemoRequest(c) && c.req.method === 'GET') {
     const path = c.req.path;
     const now = new Date().toISOString();
     const d1 = new Date(Date.now() - 86400000).toISOString();
@@ -189,8 +177,8 @@ app.use('/api/*', async (c, next) => {
 // ── Pages ─────────────────────────────────
 
 app.get('/login', (c) => c.html(renderLogin(c.env.TURNSTILE_SITE_KEY)));
-app.get('/dashboard', (c) => c.html(renderDashboard(isDemoHost(c))));
-app.get('/', (c) => c.html(renderDashboard(isDemoHost(c))));
+app.get('/dashboard', (c) => c.html(renderDashboard(isDemoRequest(c))));
+app.get('/', (c) => c.html(renderDashboard(isDemoRequest(c))));
 app.get('/s/:token', (c) => {
   const token = c.req.param('token');
   if (!/^[A-Za-z0-9]{12}$/.test(token)) return c.text('Not Found', 404);

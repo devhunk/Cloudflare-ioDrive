@@ -508,7 +508,7 @@ export function renderDashboard(isDemo: boolean = false): string {
   </style>
 </head>
 <body${isDemo ? ' class="demo"' : ''}>
-  ${isDemo ? '<div class="demo-banner">🔒 演示环境 — 文件上传已禁用，仅可浏览和下载</div>' : ''}
+  ${isDemo ? '<div class="demo-banner">🔒 只读演示 — 仅展示隔离的模拟数据</div>' : ''}
   <!-- SVG Liquid Glass filter: Edge-only Refraction -->
   <svg id="liquid-glass-svg" width="0" height="0" style="position:absolute;pointer-events:none">
     <defs>
@@ -566,11 +566,11 @@ export function renderDashboard(isDemo: boolean = false): string {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
         上传链接
       </a>
-      <a class="nav" data-nav="storage" onclick="go('storage')">
+      <a class="nav demo-hidden" data-nav="storage" onclick="go('storage')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
         存储配置
       </a>
-      <a class="nav" data-nav="moderation" onclick="go('moderation')">
+      <a class="nav demo-hidden" data-nav="moderation" onclick="go('moderation')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         审核日志
       </a>
@@ -578,12 +578,12 @@ export function renderDashboard(isDemo: boolean = false): string {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
         图床管理
       </a>
-      <a class="nav" data-nav="account" onclick="go('account')">
+      <a class="nav demo-hidden" data-nav="account" onclick="go('account')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         账号设置
       </a>
       <div class="side-bottom">
-        <div class="pill" onclick="localStorage.removeItem('iodrive_token');location.href='/login'">
+        <div class="pill demo-hidden" onclick="localStorage.removeItem('iodrive_token');location.href='/login'">
           <div class="dot">A</div>
           <span>退出</span>
         </div>
@@ -907,9 +907,9 @@ export function renderDashboard(isDemo: boolean = false): string {
   <div class="drop" id="drop"><div class="drop-text">拖拽文件到此处上传</div></div>
 
   <script>
-    if(!localStorage.getItem('iodrive_token'))location.href='/login';
-    const PS=20*1024*1024,MC=6;
     const IS_DEMO=${isDemo ? 'true' : 'false'};
+    if(!IS_DEMO&&!localStorage.getItem('iodrive_token'))location.href='/login';
+    const PS=20*1024*1024,MC=6;
     let files=[],downloads=[],uploads=[],shares=[],folders=[],currentPath='uploads/',ancestors=[];
     let selectedKeys=new Set();
     let currentBackend='';
@@ -941,7 +941,7 @@ export function renderDashboard(isDemo: boolean = false): string {
     function trunc(s,n){if(!s||s.length<=n)return s;return s.slice(0,n)+'…'}
     function checkDlScroll(){var w=document.getElementById('dl-table-wrap'),t=w?w.querySelector('table'):null;if(!w||!t)return;w.classList.toggle('can-scroll',t.scrollWidth>w.clientWidth)}
 
-    async function api(p,o){o=o||{};var h=o.headers||{};var t=localStorage.getItem('iodrive_token');if(t)h['Authorization']='Bearer '+t;o.headers=h;try{var r=await fetch(p,o);if(r.status===401){localStorage.removeItem('iodrive_token');location.href='/login';return}return r}catch(e){console.error('API:',e);return null}}
+    async function api(p,o){o=o||{};var h=o.headers||{};var t=localStorage.getItem('iodrive_token');if(t)h['Authorization']='Bearer '+t;o.headers=h;try{var r=await fetch(p,o);if(r.status===401&&!IS_DEMO){localStorage.removeItem('iodrive_token');location.href='/login';return}return r}catch(e){console.error('API:',e);return null}}
 
     // Navigation
     function go(page){

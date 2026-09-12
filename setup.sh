@@ -57,8 +57,8 @@ fi
 
 # 检查 Node.js 版本
 NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
-if [ "$NODE_VERSION" -lt 18 ]; then
-  error "Node.js 版本过低 ($(node -v))，需要 >= 18"
+if [ "$NODE_VERSION" -lt 22 ]; then
+  error "Node.js 版本过低 ($(node -v))，需要 >= 22"
   exit 1
 fi
 success "Node.js 版本: $(node -v)"
@@ -81,7 +81,7 @@ if [ ! -f "package.json" ]; then
 fi
 
 info "正在安装依赖..."
-npm install
+npm ci
 success "依赖安装完成"
 
 # ── 收集配置信息 ──────────────────────────────
@@ -112,6 +112,8 @@ if wrangler whoami --api-token "$API_TOKEN" &> /dev/null 2>&1; then
 else
   warn "无法验证 API Token（可能是权限限制），继续配置..."
 fi
+export CLOUDFLARE_API_TOKEN="$API_TOKEN"
+export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT_ID"
 
 # ── 域名配置 ──────────────────────────────────
 title "域名配置"
@@ -291,7 +293,7 @@ success "JWT Secret 已自动生成"
 # ── D1 元数据库 ──────────────────────────────
 title "D1 元数据库配置"
 
-echo -e "${YELLOW}META_DB 是必需绑定；请先在 Cloudflare 创建 D1 数据库并执行 database/init.sql${NC}"
+echo -e "${YELLOW}META_DB 是必需绑定；请先在 Cloudflare 创建 D1 数据库；脚本会在部署前应用 database/migrations${NC}"
 read -rp "$(echo -e "${BOLD}请输入 D1 Database ID: ${NC}")" META_DB_ID
 if [ -z "$META_DB_ID" ]; then
   error "D1 Database ID 不能为空"
@@ -315,12 +317,15 @@ fi
 cat > wrangler.toml << EOF
 name = "${WORKER_NAME}"
 main = "src/index.ts"
-compatibility_date = "2026-09-07"
+compatibility_date = "2026-09-12"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
 account_id = "${ACCOUNT_ID}"
 routes = [{ pattern = "${ROUTE_PREFIX}.${DOMAIN}/*", zone_name = "${DOMAIN}" }]
 
 [vars]
+SITE_ID = "${WORKER_NAME}"
 ADMIN_USER = "${ADMIN_USER}"
 TURNSTILE_SITE_KEY = "${TURNSTILE_SITE_KEY}"
 PUBLIC_UPLOAD_PATH = "uploads/public/"
@@ -335,6 +340,14 @@ R2_ACCOUNT_ID = "${ACCOUNT_ID}"
 EOF
 fi
 
+# 多后端存储配置必须仍位于 [vars] 表内
+if [ "$EXTRA_BACKEND_COUNT" -gt 0 ]; then
+  STORAGE_CONFIG_TOML=$(node -e "console.log(JSON.stringify(JSON.parse(process.argv[1])))" "$STORAGE_CONFIG")
+  cat >> wrangler.toml << EOF
+STORAGE_CONFIG = '${STORAGE_CONFIG_TOML}'
+EOF
+fi
+
 # D1 元数据库绑定（必需）
 cat >> wrangler.toml << EOF
 
@@ -342,17 +355,8 @@ cat >> wrangler.toml << EOF
 binding = "META_DB"
 database_name = "iodrive-meta"
 database_id = "${META_DB_ID}"
+migrations_dir = "database/migrations"
 EOF
-
-# 多后端存储配置
-if [ "$EXTRA_BACKEND_COUNT" -gt 0 ]; then
-  # 使用 node 将 JSON 格式化为单行 TOML 字符串
-  STORAGE_CONFIG_TOML=$(node -e "console.log(JSON.stringify(JSON.parse(process.argv[1])))" "$STORAGE_CONFIG")
-  S3_CREDENTIALS_TOML=$(node -e "console.log(JSON.stringify(JSON.parse(process.argv[1])))" "$S3_CREDENTIALS")
-  cat >> wrangler.toml << EOF
-STORAGE_CONFIG = '${STORAGE_CONFIG_TOML}'
-EOF
-fi
 
 # R2 绑定
 if [ "$R2_ENABLED" = "true" ]; then
@@ -367,9 +371,14 @@ fi
 # 日志配置
 cat >> wrangler.toml << EOF
 
-[observability.logs]
+[observability]
 enabled = true
+[observability.logs]
 invocation_logs = true
+head_sampling_rate = 1
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.01
 EOF
 
 success "wrangler.toml 已生成"
@@ -416,10 +425,13 @@ if [ "$R2_ENABLED" = "true" ]; then
   read -rp "$(echo -e "${BOLD}是否自动创建 R2 存储桶「${R2_BUCKET}」？(Y/n): ${NC}")" CREATE_R2
   if [[ ! "$CREATE_R2" =~ ^[Nn]$ ]]; then
     info "正在创建 R2 存储桶..."
-    if CLOUDFLARE_API_TOKEN="$API_TOKEN" wrangler r2 bucket create "$R2_BUCKET" 2>/dev/null; then
+    if output=$(wrangler r2 bucket create "$R2_BUCKET" 2>&1); then
       success "R2 存储桶「${R2_BUCKET}」创建成功"
+    elif echo "$output" | grep -qi "already exists"; then
+      info "R2 存储桶「${R2_BUCKET}」已存在"
     else
-      warn "存储桶可能已存在或创建失败，请手动检查"
+      error "$output"
+      exit 1
     fi
   fi
 fi
@@ -445,6 +457,11 @@ read -rp "$(echo -e "${BOLD}是否立即部署？(Y/n): ${NC}")" DEPLOY_NOW
 if [[ ! "$DEPLOY_NOW" =~ ^[Nn]$ ]]; then
   info "正在部署..."
   echo ""
+
+  # 先迁移数据库，失败时不发布新代码
+  info "应用 D1 数据库迁移..."
+  wrangler d1 migrations apply META_DB --remote
+  success "数据库迁移完成"
 
   # 设置 secrets
   info "配置密钥..."
@@ -498,8 +515,9 @@ if [[ "$SHOW_GH" =~ ^[Yy]$ ]]; then
   echo -e "  1. Fork 本仓库到你的 GitHub 账号"
   echo -e "  2. 进入仓库 → Settings → Secrets and variables → Actions"
   echo -e "  3. 添加以下 Secrets："
-  echo -e "     ${CYAN}CLOUDFLARE_API_TOKEN${NC} = ${API_TOKEN}"
+  echo -e "     ${CYAN}CLOUDFLARE_API_TOKEN${NC} = <在 GitHub Secrets 中填写，终端不会回显>"
   echo -e "     ${CYAN}CLOUDFLARE_ACCOUNT_ID${NC} = ${ACCOUNT_ID}"
+  echo -e "     ${CYAN}META_DB_ID${NC} = ${META_DB_ID}"
   echo -e "  4. 推送代码到 main 分支即可自动部署"
   echo ""
   echo -e "  ${BOLD}其他需要配置的 Secrets（通过 wrangler secret 或 GitHub Secrets）：${NC}"

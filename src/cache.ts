@@ -5,7 +5,9 @@ import type { Env } from './types';
  * 当多个站点共享同一个 KV 命名空间时，用 SITE_ID 区分不同站点的缓存。
  */
 function getSitePrefix(env: Env): string {
-  return env.SITE_ID || 'default';
+  const siteId = env.SITE_ID?.trim();
+  if (!siteId) throw new Error('CACHE_KV requires a non-empty SITE_ID');
+  return siteId;
 }
 
 /**

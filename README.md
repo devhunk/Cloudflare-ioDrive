@@ -272,7 +272,7 @@ chmod +x setup.sh
 
 - **D1 元数据库**：`META_DB` binding 为必需配置，用于账号、分享、日志、上传密钥与分片会话
 - **单表 key-value 设计**：参考 ImgBed 的简化模式，所有元数据（分享、下载日志、上传日志、上传链接、配置、多段上传会话、审核日志）统一存到 `kv` 表
-- **显式初始化**：部署前执行 `database/init.sql`，避免在请求链路动态建表
+- **显式初始化**：部署前执行 `database/migrations/`，避免在请求链路动态建表
 - **故障可见**：D1 故障直接返回错误，避免静默回退造成元数据分叉
 
 ### 🔌 WebDAV 网盘挂载
@@ -505,11 +505,12 @@ cp wrangler.toml.example wrangler.toml
 ```toml
 name = "iodrive"
 main = "src/index.ts"
-compatibility_date = "2026-09-07"
+compatibility_date = "2026-09-12"
 compatibility_flags = ["nodejs_compat"]
 routes = [{ pattern = "YOUR_DOMAIN/*", zone_name = "YOUR_ZONE" }]
 
 [vars]
+SITE_ID = "production"
 ADMIN_USER = "admin"
 R2_PUBLIC_DOMAIN = "YOUR_R2_PUBLIC_DOMAIN"
 R2_BUCKET = "YOUR_R2_BUCKET"
@@ -585,11 +586,12 @@ npm run deploy
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
+| `SITE_ID` | 部署实例唯一标识，用于缓存和 JWT 隔离 | `production` |
 | `ADMIN_USER` | 管理员用户名 | `admin` |
 | `R2_PUBLIC_DOMAIN` | R2 公开访问域名 | `r2.example.com` |
 | `R2_BUCKET` | R2 存储桶名称 | `iodrive` |
-| `R2_ACCOUNT_ID` | Cloudflare 账户 ID | `b06463110442db176b96e67a7fd4eb8e` |
-| `TURNSTILE_SITE_KEY` | Turnstile 站点密钥（公开） | `0x4AAAAAADnkUbPb8iGro2Vh` |
+| `R2_ACCOUNT_ID` | Cloudflare 账户 ID | `YOUR_ACCOUNT_ID` |
+| `TURNSTILE_SITE_KEY` | Turnstile 站点密钥（公开） | `YOUR_TURNSTILE_SITE_KEY` |
 
 #### 必需密钥（wrangler secret）
 
@@ -618,6 +620,7 @@ npm run deploy
 | `WEBDAV_PASS` | WebDAV HTTP Basic 密码（建议用 `wrangler secret put` 注入） | - |
 | `RANDOM_ENABLED` | 随机图片 API 总开关 | `false` |
 | `RANDOM_ALLOWED_DIRS` | 随机 API 允许的目录 CSV（留空 = 不限制） | 空 |
+| `DEMO_MODE` | 只读演示开关；仅演示 Worker 设置为 `true` | `false` |
 
 #### D1 元数据库（必需）
 
@@ -626,9 +629,14 @@ npm run deploy
 binding = "META_DB"
 database_name = "iodrive-meta"
 database_id = "<your-d1-uuid>"
+migrations_dir = "database/migrations"
 ```
 
-部署前必须使用 `database/init.sql` 初始化该数据库。
+部署前应用版本化迁移：
+
+```bash
+npx wrangler d1 migrations apply META_DB --remote
+```
 
 ### 路由配置
 
@@ -659,11 +667,7 @@ binding = "CACHE_KV"
 id = "your-kv-namespace-id"
 ```
 
-> ⚠️ **多实例部署注意：** 如果你在同一个 Cloudflare 账户下部署了多个 ioDrive 实例（例如生产站 + 演示站），并且它们共享同一个 KV 命名空间（`CACHE_KV` 的 `id` 相同），**必须确保每个实例的 `R2_BUCKET` 值不同**。
->
-> ioDrive 使用 `R2_BUCKET` 作为缓存隔离标识，缓存 key 格式为 `file_index:{R2_BUCKET}:{backend}:{prefix}`。如果多个实例的 `R2_BUCKET` 相同，它们的文件列表缓存会互相覆盖，导致站点 A 显示站点 B 的文件。
->
-> **推荐做法：** 为每个实例分配独立的 KV 命名空间，或确保 `R2_BUCKET` 值唯一。
+> ⚠️ **多实例部署注意：** 共享同一个 KV 命名空间时，每个实例必须设置不同的 `SITE_ID`。更稳妥的做法仍是为每个实例分配独立的 KV 命名空间。
 
 ### CORS 配置
 
@@ -684,10 +688,15 @@ app.use('/api/*', cors({
 drive/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                    # GitHub Actions CI/CD 配置
+│       ├── deploy.yml                # 主分支校验并部署生产与只读演示
+│       └── deploy-button.yml         # Fork 后手动部署
 ├── database/
-│   └── init.sql                      # D1 Schema（启用 D1 时使用）
+│   └── migrations/
+│       └── 0001_init.sql             # D1 初始版本化迁移
 ├── docs/
+│   ├── MAINTENANCE.md                # 维护、迁移与发布约定
+│   ├── prototypes/
+│   │   └── pen.html                  # 历史界面原型
 │   ├── README_EN.md                  # 英文文档
 │   ├── README_JA.md                  # 日文文档
 │   └── images/
@@ -703,6 +712,8 @@ drive/
 │           └── share-link-2.png      # 分享链接截图-命令下载
 ├── src/
 │   ├── index.ts                      # 🚀 应用入口：路由注册、页面路由、SEO
+│   ├── demo-mode.ts                  # 🔒 演示环境边界与只读判定
+│   ├── jwt-scope.ts                  # 🔐 JWT 签发方与环境作用域
 │   ├── auth.ts                       # 🔐 JWT 认证：登录、JWT 签发与验证中间件、频率限制
 │   ├── files.ts                      # 📁 文件 CRUD：列表、创建文件夹、删除、批量删除、移动
 │   ├── upload.ts                     # 📤 仪表盘上传：单文件、分片上传（init/part/complete/abort）
@@ -735,6 +746,7 @@ drive/
 ├── wrangler.toml.example             # 配置文件模板
 ├── tsconfig.json                     # TypeScript 配置
 ├── package.json                      # 项目依赖与脚本
+├── SECURITY.md                       # 安全报告与部署约束
 ├── LICENSE                           # GPL-3.0 许可证
 └── README.md                         # 项目文档
 ```
@@ -1243,16 +1255,22 @@ npm run deploy
 
 项目已配置 CI/CD 流水线（`.github/workflows/deploy.yml`）：
 
-- **推送到 `main` 分支** → 将同一个已验证提交自动部署到生产环境和演示环境
-- **推送到 `demo` 分支** → 仅运行类型检查和 dry-run 构建
-- **创建 PR 到 `main` 或 `demo`** → 自动运行类型检查和测试
+- **推送到 `main` 分支** → 校验通过后，依次迁移并部署生产环境和只读演示环境
+- **创建 PR 到 `main` 或 `demo`** → 仅运行类型检查和 dry-run 构建
+- **远端 `demo` 分支** → 作为历史分支保留，不触发部署
 
 #### 配置 GitHub Actions
 
 1. Fork 本仓库后，在你自己的仓库中进入 **Settings** → **Secrets and variables** → **Actions**，添加以下 Secrets：
    
-   - `CLOUDFLARE_API_TOKEN`：Cloudflare API 令牌（需要有 Workers 部署权限）
-   - `CLOUDFLARE_ACCOUNT_ID`：你的 Cloudflare 账户 ID
+   - `CLOUDFLARE_API_TOKEN`：Cloudflare API 令牌（Workers、D1、R2 部署权限）
+   - `CLOUDFLARE_ACCOUNT_ID`：Cloudflare 账户 ID
+   - `META_DB_ID`：生产 D1 数据库 ID
+   - `ADMIN_PASS`：生产管理员密码
+   - `JWT_SECRET`：生产 JWT 签名密钥
+   - `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET`：可选的人机验证配置
+   - `CACHE_KV_ID`：可选的缓存 KV 命名空间 ID
+   - R2/S3 访问密钥：仅在启用预签名下载或 S3 后端时配置
 
 2. 创建 Cloudflare API Token：
    
@@ -1263,6 +1281,10 @@ npm run deploy
 3. 获取 Cloudflare Account ID：
    
    - 进入 [Cloudflare Dashboard](https://dash.cloudflare.com/) → 选择你的域名 → **概览** 页面右侧可以看到 **账户 ID**
+
+### 演示环境
+
+官方 Demo 是无账号、只读的模拟数据环境。它通过 `DEMO_MODE=true` 显式启用，拒绝所有写请求，并使用独立的 `SITE_ID`、D1 与 R2；不要向 Demo Worker 注入生产密钥。
 
 ### 部署后检查
 

@@ -1,11 +1,14 @@
 name = "iodrive"
 main = "src/index.ts"
-compatibility_date = "2026-09-07"
+compatibility_date = "2026-09-12"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
 account_id = "YOUR_ACCOUNT_ID"
 routes = [{ pattern = "YOUR_DOMAIN/*", zone_name = "YOUR_ZONE" }]
 
 [vars]
+SITE_ID = "production" # 每个部署必须唯一，用于缓存和 JWT 隔离
 ADMIN_USER = "admin"
 TURNSTILE_SITE_KEY = "YOUR_TURNSTILE_SITE_KEY"
 PUBLIC_UPLOAD_PATH = "uploads/public/"
@@ -42,6 +45,7 @@ PUBLIC_UPLOAD_PATH = "uploads/public/"
 binding = "META_DB"
 database_name = "iodrive-meta"
 database_id = "YOUR_D1_DATABASE_ID"
+migrations_dir = "database/migrations"
 
 # ── R2 存储桶绑定（可选，使用 R2 时需要） ──────────────────
 # [[r2_buckets]]
@@ -61,6 +65,11 @@ database_id = "YOUR_D1_DATABASE_ID"
 # limit = 100
 # period = 60
 
-[observability.logs]
+[observability]
 enabled = true
+[observability.logs]
 invocation_logs = true
+head_sampling_rate = 1
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.01

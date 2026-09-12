@@ -272,7 +272,7 @@ chmod +x setup.sh
 
 - **D1 メタデータベース**：アカウント、共有、ログ、アップロードキー、マルチパートセッションには `META_DB` binding が必須です
 - **単一テーブル key-value 設計**：ImgBed の簡素化されたパターンを参考に、すべてのメタデータ（共有、ダウンロードログ、アップロードログ、アップロードリンク、設定、マルチパートアップロードセッション、モデレーションログ）を `kv` テーブルに統一保存
-- **明示的な初期化**：リクエスト処理中の動的なテーブル作成を避け、デプロイ前に `database/init.sql` を実行
+- **明示的な初期化**：リクエスト処理中の動的なテーブル作成を避け、デプロイ前に `database/migrations/` を実行
 - **障害の可視化**：D1 エラーを伝播し、複数バックエンドへのメタデータ分岐を防止
 
 ### 🔌 WebDAV ドライブマウント
@@ -505,11 +505,12 @@ cp wrangler.toml.example wrangler.toml
 ```toml
 name = "iodrive"
 main = "src/index.ts"
-compatibility_date = "2026-09-07"
+compatibility_date = "2026-09-12"
 compatibility_flags = ["nodejs_compat"]
 routes = [{ pattern = "YOUR_DOMAIN/*", zone_name = "YOUR_ZONE" }]
 
 [vars]
+SITE_ID = "production"
 ADMIN_USER = "admin"
 R2_PUBLIC_DOMAIN = "YOUR_R2_PUBLIC_DOMAIN"
 R2_BUCKET = "YOUR_R2_BUCKET"
@@ -585,11 +586,12 @@ npm run deploy
 
 | 変数 | 説明 | 例 |
 |------|------|------|
+| `SITE_ID` | キャッシュと JWT を分離するデプロイ固有 ID | `production` |
 | `ADMIN_USER` | 管理者ユーザー名 | `admin` |
 | `R2_PUBLIC_DOMAIN` | R2 公開アクセスドメイン | `r2.example.com` |
 | `R2_BUCKET` | R2 バケット名 | `iodrive` |
-| `R2_ACCOUNT_ID` | Cloudflare アカウント ID | `b06463110442db176b96e67a7fd4eb8e` |
-| `TURNSTILE_SITE_KEY` | Turnstile サイトキー（公開） | `0x4AAAAAADnkUbPb8iGro2Vh` |
+| `R2_ACCOUNT_ID` | Cloudflare アカウント ID | `YOUR_ACCOUNT_ID` |
+| `TURNSTILE_SITE_KEY` | Turnstile サイトキー（公開） | `YOUR_TURNSTILE_SITE_KEY` |
 
 #### 必須シークレット（wrangler secret）
 
@@ -624,9 +626,14 @@ npm run deploy
 binding = "META_DB"
 database_name = "iodrive-meta"
 database_id = "<your-d1-uuid>"
+migrations_dir = "database/migrations"
 ```
 
-デプロイ前に `database/init.sql` でデータベースを初期化してください。
+デプロイ前にバージョン管理されたマイグレーションを適用してください：
+
+```bash
+npx wrangler d1 migrations apply META_DB --remote
+```
 
 ### ルート設定
 
@@ -657,11 +664,7 @@ binding = "CACHE_KV"
 id = "your-kv-namespace-id"
 ```
 
-> ⚠️ **マルチインスタンスデプロイの注意：** 同じ Cloudflare アカウントで複数の ioDrive インスタンスをデプロイし（例：本番 + デモ）、同じ KV ネームスペース（同じ `CACHE_KV` の `id`）を共有する場合、**各インスタンスの `R2_BUCKET` 値は一意である必要があります**。
->
-> ioDrive は `R2_BUCKET` をキャッシュ分離キーとして使用しています。キャッシュキーの形式は `file_index:{R2_BUCKET}:{backend}:{prefix}` です。複数のインスタンスが同じ `R2_BUCKET` を共有すると、ファイル一覧キャッシュが互いに上書きされ、サイト A にサイト B のファイルが表示されます。
->
-> **推奨：** 各インスタンスに個別の KV ネームスペースを割り当てるか、各 `R2_BUCKET` 値を一意にしてください。
+> ⚠️ **マルチインスタンスデプロイの注意：** 同じ KV ネームスペースを共有する各インスタンスには異なる `SITE_ID` を設定してください。KV 自体を分離する方法が最も安全です。
 
 ### CORS 設定
 
@@ -684,7 +687,7 @@ drive/
 │   └── workflows/
 │       └── ci.yml                    # GitHub Actions CI/CD 設定
 ├── database/
-│   └── init.sql                      # D1 Schema（D1 を有効化した際に使用）
+│   └── migrations/0001_init.sql      # D1 初期バージョンマイグレーション
 ├── docs/
 │   ├── README_EN.md                  # 英語ドキュメント
 │   ├── README_JA.md                  # 日本語ドキュメント
@@ -1241,9 +1244,9 @@ npm run deploy
 
 プロジェクトには CI/CD パイプライン（`.github/workflows/deploy.yml`）が含まれています：
 
-- **`main` ブランチにプッシュ** → 検証済みの同一コミットを本番環境とデモ環境へ自動デプロイ
-- **`demo` ブランチにプッシュ** → 型チェックとドライランビルドのみ実行
-- **`main` または `demo` への PR** → 自動で型チェックとテストを実行
+- **`main` ブランチにプッシュ** → 検証、マイグレーション、本番環境、読み取り専用 Demo の順にデプロイ
+- **`main` または `demo` への PR** → 型チェックとドライランビルドのみ実行
+- **リモート `demo` ブランチ** → 履歴用として保持し、デプロイには使用しない
 
 #### GitHub Actions の設定
 

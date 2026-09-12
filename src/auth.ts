@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import type { Env, JwtPayload } from './types';
 import { verifyTurnstile } from './turnstile';
 import { createMetadataStore, type MetadataStore } from './metadata-store';
+import { JWT_ISSUER, jwtAudience } from './jwt-scope';
 
 // ── Admin config ─────────────────────────
 
@@ -192,6 +193,8 @@ authRoutes.post('/login', async (c) => {
   const secret = new TextEncoder().encode(c.env.JWT_SECRET);
   const token = await new SignJWT({ sub: 'admin', role: 'admin' } as JwtPayload)
     .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(JWT_ISSUER)
+    .setAudience(jwtAudience(c.env))
     .setIssuedAt()
     .setExpirationTime('24h')
     .sign(secret);
@@ -265,7 +268,10 @@ export async function jwtAuth(c: Context<{ Bindings: Env }>, next: Next) {
     const token = auth.slice(7);
     if (!c.env.JWT_SECRET) return c.json({ error: '服务端认证配置不完整' }, 500);
     const secret = new TextEncoder().encode(c.env.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret, {
+      issuer: JWT_ISSUER,
+      audience: jwtAudience(c.env),
+    });
     if (payload.sub !== 'admin' || payload.role !== 'admin') throw new Error('Invalid token claims');
     await next();
   } catch {

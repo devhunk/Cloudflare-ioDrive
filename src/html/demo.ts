@@ -328,17 +328,13 @@ export function renderDemo(): string {
 <!-- ── Trial ── -->
 <section class="section" id="trial">
   <h2 class="section-title scroll-reveal">立即体验</h2>
-  <p class="section-desc scroll-reveal">使用以下账号登录体验完整功能</p>
+  <p class="section-desc scroll-reveal">无需账号，直接浏览隔离的模拟数据</p>
   <div class="trial-box scroll-reveal">
-    <h3>🔐 演示账号</h3>
-    <p class="sub">直接使用以下凭据登录管理后台</p>
-    <div class="trial-creds">
-      <div><div class="label">用户名</div><div class="value">admin</div></div>
-      <div><div class="label">密码</div><div class="value">admin</div></div>
-    </div>
+    <h3>🔒 只读演示</h3>
+    <p class="sub">演示环境不接受登录、上传、删除或配置修改，不连接生产数据。</p>
     <div class="trial-btns">
-      <a href="/login" class="btn-p">立即登录</a>
-      <button class="btn-s" disabled style="opacity:.5;cursor:not-allowed">演示环境已禁用上传</button>
+      <a href="/dashboard" class="btn-p">打开演示后台</a>
+      <button class="btn-s" disabled style="opacity:.5;cursor:not-allowed">所有写操作已禁用</button>
     </div>
   </div>
 </section>

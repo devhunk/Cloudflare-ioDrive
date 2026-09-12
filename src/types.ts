@@ -15,8 +15,8 @@ export interface Env {
 
   // Environment variables
   ADMIN_USER: string;
-  ADMIN_PASS: string;       // set via wrangler secret
-  JWT_SECRET: string;
+  ADMIN_PASS?: string;      // set via wrangler secret; omitted in read-only demo
+  JWT_SECRET?: string;       // set via wrangler secret; omitted in read-only demo
   PUBLIC_DOMAIN?: string;    // 公开访问域名（可选，用于图床/内容审核等公开 URL 生成）
   R2_PUBLIC_DOMAIN?: string; // R2 公开访问域名（可选，用于生成 R2 直链下载 URL）
   TURNSTILE_SITE_KEY: string;
@@ -43,8 +43,11 @@ export interface Env {
   RANDOM_ENABLED?: string;        // 'true' 启用
   RANDOM_ALLOWED_DIRS?: string;   // CSV，留空 = 允许 uploads/ 下所有目录
 
-  // 站点标识（用于 KV 缓存隔离，替代原 R2_BUCKET）
-  SITE_ID?: string;
+  // 站点标识（用于 KV 缓存和 JWT audience 隔离）
+  SITE_ID: string;
+
+  // 只读演示模式；必须在演示 Worker 中显式设置为 'true'
+  DEMO_MODE?: string;
 }
 
 // 多后端存储配置

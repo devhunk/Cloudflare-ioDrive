@@ -1,4 +1,4 @@
--- ioDrive 元数据 D1 Schema
+-- ioDrive D1 migration 0001: initial metadata schema
 -- 单表 key-value 模式，替代 R2 JSON 文件存储
 
 CREATE TABLE IF NOT EXISTS kv (
