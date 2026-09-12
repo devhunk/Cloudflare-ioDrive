@@ -11,6 +11,7 @@ import type { Env, ModerationConfig, ModerationLogEntry } from './types';
 import { createMetadataStore } from './metadata-store';
 import { createStorageEngine } from './storage-engine';
 import { clearFileCache } from './cache';
+import { getPublicFileUrl } from './public-url';
 
 const MODERATION_CONFIG_KEY = '_config/moderation';
 export const MODERATION_LOG_PREFIX = '_moderation_logs/';
@@ -119,12 +120,10 @@ export async function moderateAndCleanup(env: Env, info: {
 
     // 生成可访问的 URL 给 provider 调用
     // 优先用 R2 public domain，否则用 presigned URL
-    let fileUrl: string;
-    if (env.PUBLIC_DOMAIN) {
-      fileUrl = `https://${env.PUBLIC_DOMAIN}/${info.key.split('/').map(encodeURIComponent).join('/')}`;
-    } else {
-      // 没有 public domain，跳过（避免向 provider 暴露内部 presign 链接）
-      console.warn('Moderation skipped: PUBLIC_DOMAIN not configured');
+    const fileUrl = getPublicFileUrl(env, info.key);
+    if (!fileUrl) {
+      // 没有公开存储域名，跳过（避免向 provider 暴露内部 presign 链接）
+      console.warn('Moderation skipped: PUBLIC_DOMAIN or R2_PUBLIC_DOMAIN not configured');
       return;
     }
 

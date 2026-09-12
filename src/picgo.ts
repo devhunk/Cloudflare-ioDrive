@@ -10,6 +10,7 @@ import { moderateAndCleanup } from './moderation';
 import { s3PutObject } from './s3-upload';
 import { clearFileCache } from './cache';
 import { normalizeUploadDirectory } from './storage-path';
+import { getPublicFileUrl } from './public-url';
 
 export const picgoRoutes = new Hono<{ Bindings: Env }>();
 const MAX_UPLOAD_SIZE = 20 * 1024 * 1024;
@@ -109,15 +110,7 @@ picgoRoutes.post('/', async (c) => {
 
   c.executionCtx.waitUntil(clearFileCache(c.env, '', key2));
 
-  let fileUrl = '';
-  if (c.env.PUBLIC_DOMAIN) {
-    const encoded = key2.split('/').map(encodeURIComponent).join('/');
-    fileUrl = `https://${c.env.PUBLIC_DOMAIN}/${encoded}`;
-  } else {
-    // Fallback: ioDrive's public stream route if they haven't configured a public domain but are using the app
-    const origin = new URL(c.req.url).origin;
-    fileUrl = `${origin}/f/${key2.split('/').map(encodeURIComponent).join('/')}`;
-  }
+  const fileUrl = getPublicFileUrl(c.env, key2, new URL(c.req.url).origin)!;
 
   return c.json({ 
     success: true, 

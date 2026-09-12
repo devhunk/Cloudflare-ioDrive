@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, FileMeta } from './types';
 import { createStorageEngine } from './storage-engine';
 import { getSafeImageContentType } from './upload-utils';
+import { getPublicFileUrl } from './public-url';
 
 export const galleryRoutes = new Hono<{ Bindings: Env }>();
 
@@ -32,22 +33,11 @@ galleryRoutes.get('/list', async (c) => {
       }))
       .sort((a, b) => new Date(b.uploaded).getTime() - new Date(a.uploaded).getTime());
 
-    // We can also return public URLs directly to make it easier for the frontend
-    const r2Domain = c.env.PUBLIC_DOMAIN;
     const origin = new URL(c.req.url).origin;
-
-    const items = files.map(f => {
-      let url = '';
-      if (r2Domain) {
-        url = `https://${r2Domain}/${f.key.split('/').map(encodeURIComponent).join('/')}`;
-      } else {
-        url = `${origin}/f/${f.key.split('/').map(encodeURIComponent).join('/')}`;
-      }
-      return {
-        ...f,
-        url
-      };
-    });
+    const items = files.map(f => ({
+      ...f,
+      url: getPublicFileUrl(c.env, f.key, origin)!,
+    }));
 
     return c.json({ ok: true, items });
   } catch (err: unknown) {

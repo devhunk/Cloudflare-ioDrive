@@ -155,7 +155,7 @@ jobs:
           [vars]
           SITE_ID = "${{ inputs.worker_name }}"
           ADMIN_USER = "${{ inputs.admin_user }}"
-          PUBLIC_DOMAIN = "${{ inputs.route_prefix }}.${{ inputs.domain }}"
+          APP_DOMAIN = "${{ inputs.route_prefix }}.${{ inputs.domain }}"
           R2_PUBLIC_DOMAIN = "${{ inputs.r2_public_domain }}"
           R2_BUCKET = "${{ steps.r2.outputs.bucket }}"
           R2_ACCOUNT_ID = "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"

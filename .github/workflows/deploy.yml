@@ -78,7 +78,7 @@ jobs:
           [vars]
           SITE_ID = "production"
           ADMIN_USER = "admin"
-          PUBLIC_DOMAIN = "drive.iodevo.com"
+          APP_DOMAIN = "drive.iodevo.com"
           R2_PUBLIC_DOMAIN = "r2.iodevo.com"
           R2_BUCKET = "iodrive-apac"
           R2_ACCOUNT_ID = "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"

@@ -10,6 +10,7 @@ import { s3PutObject } from './s3-upload';
 import { clearFileCache } from './cache';
 import { jwtAuth } from './auth';
 import { assertSafeStorageKey } from './storage-path';
+import { getPublicFileUrl } from './public-url';
 
 export const imgbedRoutes = new Hono<{ Bindings: Env }>();
 
@@ -79,14 +80,7 @@ imgbedRoutes.post('/upload', async (c) => {
   c.executionCtx.waitUntil(clearFileCache(c.env, '', key));
 
   // 构建外链 URL
-  let fileUrl = '';
-  if (c.env.PUBLIC_DOMAIN) {
-    const encoded = key.split('/').map(encodeURIComponent).join('/');
-    fileUrl = `https://${c.env.PUBLIC_DOMAIN}/${encoded}`;
-  } else {
-    const origin = new URL(c.req.url).origin;
-    fileUrl = `${origin}/f/${key.split('/').map(encodeURIComponent).join('/')}`;
-  }
+  const fileUrl = getPublicFileUrl(c.env, key, new URL(c.req.url).origin)!;
 
   return c.json({ ok: true, url: fileUrl, key, name: file.name });
 });
@@ -103,13 +97,7 @@ imgbedRoutes.get('/list', jwtAuth, async (c) => {
         return isImageFile(obj.key);
       })
       .map((obj) => {
-        let url = '';
-        if (c.env.PUBLIC_DOMAIN) {
-          url = `https://${c.env.PUBLIC_DOMAIN}/${obj.key.split('/').map(encodeURIComponent).join('/')}`;
-        } else {
-          const origin = new URL(c.req.url).origin;
-          url = `${origin}/f/${obj.key.split('/').map(encodeURIComponent).join('/')}`;
-        }
+        const url = getPublicFileUrl(c.env, obj.key, new URL(c.req.url).origin)!;
         return {
           key: obj.key,
           name: obj.key.replace(IMGBED_PATH, ''),

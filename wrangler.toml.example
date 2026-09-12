@@ -10,7 +10,8 @@ routes = [{ pattern = "YOUR_DOMAIN/*", zone_name = "YOUR_ZONE" }]
 [vars]
 SITE_ID = "production" # 每个部署必须唯一，用于缓存和 JWT 隔离
 ADMIN_USER = "admin"
-PUBLIC_DOMAIN = "YOUR_DOMAIN" # Worker 对外域名，WebDAV 内部回调依赖此值
+APP_DOMAIN = "YOUR_DOMAIN" # Worker 对外域名，WebDAV 内部回调依赖此值
+# PUBLIC_DOMAIN = "YOUR_STORAGE_PUBLIC_DOMAIN" # 通用对象直链域名
 TURNSTILE_SITE_KEY = "YOUR_TURNSTILE_SITE_KEY"
 PUBLIC_UPLOAD_PATH = "uploads/public/"
 PUBLIC_UPLOAD_MAX_BYTES = "2147483648" # 默认 2 GiB，可按成本预算调整

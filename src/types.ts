@@ -17,7 +17,8 @@ export interface Env {
   ADMIN_USER: string;
   ADMIN_PASS?: string;      // set via wrangler secret; omitted in read-only demo
   JWT_SECRET?: string;       // set via wrangler secret; omitted in read-only demo
-  PUBLIC_DOMAIN?: string;    // 公开访问域名（可选，用于图床/内容审核等公开 URL 生成）
+  APP_DOMAIN?: string;       // Worker 对外域名（可选，WebDAV 内部回调使用）
+  PUBLIC_DOMAIN?: string;    // 通用存储公开域名（可选）
   R2_PUBLIC_DOMAIN?: string; // R2 公开访问域名（可选，用于生成 R2 直链下载 URL）
   TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET: string;

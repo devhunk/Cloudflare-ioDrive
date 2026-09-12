@@ -21,6 +21,7 @@ import { createStorageEngine } from './storage-engine';
 import { jwtAuth } from './auth';
 import { cors } from 'hono/cors';
 import { normalizeUploadDirectory } from './storage-path';
+import { getPublicFilePath, getPublicFileUrl } from './public-url';
 
 export const randomRoutes = new Hono<{ Bindings: Env }>();
 
@@ -131,10 +132,8 @@ randomRoutes.get('/', async (c) => {
   const picked = filtered[Math.floor(Math.random() * filtered.length)];
 
   // 6. 响应格式
-  const urlPath = '/' + picked.key.split('/').map(encodeURIComponent).join('/');
-  const publicUrl = c.env.PUBLIC_DOMAIN
-    ? 'https://' + c.env.PUBLIC_DOMAIN + urlPath
-    : origin + '/f' + urlPath;
+  const urlPath = getPublicFilePath(c.env, picked.key);
+  const publicUrl = getPublicFileUrl(c.env, picked.key, origin)!;
 
   if (form === 'text') {
     return c.text(publicUrl);
@@ -149,7 +148,7 @@ randomRoutes.get('/', async (c) => {
   }
 
   // 默认 JSON {url: 相对路径}
-  return c.json({ url: c.env.PUBLIC_DOMAIN ? urlPath : '/f' + urlPath });
+  return c.json({ url: urlPath });
 });
 
 function detectOrientation(ua: string): Orientation {

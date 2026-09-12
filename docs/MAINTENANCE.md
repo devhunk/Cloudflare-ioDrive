@@ -28,8 +28,9 @@ npm run check
 
 JWTs are scoped to `SITE_ID`. Changing `SITE_ID` invalidates existing sessions.
 
-`PUBLIC_DOMAIN` must be the Worker hostname without a scheme. WebDAV uses it for
-internal authenticated callbacks. Public multipart uploads are capped by
+`APP_DOMAIN` must be the Worker hostname without a scheme. WebDAV uses it for
+internal authenticated callbacks. `PUBLIC_DOMAIN` and `R2_PUBLIC_DOMAIN` are
+reserved for direct object-storage domains. Public multipart uploads are capped by
 `PUBLIC_UPLOAD_MAX_BYTES` (2 GiB by default), bound to a 24-hour capability, and
 must use 20 MiB parts except for the final part.
 
