@@ -76,6 +76,10 @@ jobs:
             echo "❌ 缺少 Secret: JWT_SECRET"
             exit 1
           fi
+          if [ -z "${{ secrets.TURNSTILE_SITE_KEY }}" ]; then
+            echo "❌ 缺少 Secret: TURNSTILE_SITE_KEY"
+            exit 1
+          fi
           if [ -z "${{ secrets.TURNSTILE_SECRET }}" ]; then
             echo "❌ 缺少 Secret: TURNSTILE_SECRET"
             exit 1
