@@ -1,0 +1,193 @@
+# ============================================================
+#  ioDrive 简化部署工作流
+#  只需 3 个必需 Secrets，其他自动配置
+# ============================================================
+name: 🚀 简化部署 ioDrive
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: '你的域名 (例: example.com)'
+        required: true
+      route_prefix:
+        description: '路由前缀 (例: drive，最终访问 drive.example.com)'
+        required: true
+        default: 'drive'
+      worker_name:
+        description: 'Worker 名称 (默认: iodrive)'
+        required: false
+        default: 'iodrive'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iodrive-simple-${{ inputs.worker_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 自动配置并部署
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 验证必需的 Secrets
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "❌ 缺少 Secret: CLOUDFLARE_API_TOKEN"
+            echo "请在仓库 Settings → Secrets and variables → Actions 中添加"
+            exit 1
+          fi
+          if [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "❌ 缺少 Secret: CLOUDFLARE_ACCOUNT_ID"
+            exit 1
+          fi
+          echo "✅ 必需的 Secrets 已配置"
+
+      - name: 自动配置 Cloudflare 资源
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DOMAIN: ${{ inputs.domain }}
+          WORKER_NAME: ${{ inputs.worker_name }}
+        run: |
+          echo "🚀 开始自动配置 Cloudflare 资源..."
+          node scripts/auto-provision.js "$CLOUDFLARE_API_TOKEN" "$CLOUDFLARE_ACCOUNT_ID" "$DOMAIN" "$WORKER_NAME" > /tmp/provision-output.txt 2>&1 || true
+          cat /tmp/provision-output.txt
+
+          # 解析输出获取配置
+          D1_DB_ID=$(grep "D1 数据库 ID:" /tmp/provision-output.txt | awk '{print $NF}')
+          TURNSTILE_SITE_KEY=$(grep "Turnstile Site Key:" /tmp/provision-output.txt | awk '{print $NF}')
+          TURNSTILE_SECRET=$(grep "Turnstile Secret Key:" /tmp/provision-output.txt | awk '{print $NF}')
+          ADMIN_PASS=$(grep "管理员密码:" /tmp/provision-output.txt | awk '{print $NF}')
+          JWT_SECRET=$(grep "JWT Secret:" /tmp/provision-output.txt | awk '{print $NF}')
+
+          # 保存到环境变量供后续步骤使用
+          echo "D1_DB_ID=$D1_DB_ID" >> $GITHUB_ENV
+          echo "TURNSTILE_SITE_KEY=$TURNSTILE_SITE_KEY" >> $GITHUB_ENV
+          echo "TURNSTILE_SECRET=$TURNSTILE_SECRET" >> $GITHUB_ENV
+          echo "ADMIN_PASS=$ADMIN_PASS" >> $GITHUB_ENV
+          echo "JWT_SECRET=$JWT_SECRET" >> $GITHUB_ENV
+
+          # 保存完整输出供用户查看
+          echo "PROVISION_OUTPUT=$(cat /tmp/provision-output.txt)" >> $GITHUB_ENV
+
+          echo "✅ 资源配置完成"
+
+      - name: 配置 R2 API 令牌（可选）
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # 检查是否配置了 R2 API 令牌
+          if [ -n "${{ secrets.R2_ACCESS_KEY }}" ] && [ -n "${{ secrets.R2_SECRET_KEY }}" ]; then
+            echo "${{ secrets.R2_ACCESS_KEY }}" | npx wrangler secret put R2_ACCESS_KEY
+            echo "${{ secrets.R2_SECRET_KEY }}" | npx wrangler secret put R2_SECRET_KEY
+            echo "✅ R2 API 令牌已配置"
+          else
+            echo "⚠️  未配置 R2 API 令牌"
+            echo "预签名下载功能将不可用"
+            echo "如需启用，请在 GitHub Secrets 中添加："
+            echo "  R2_ACCESS_KEY"
+            echo "  R2_SECRET_KEY"
+          fi
+
+      - name: 生成 wrangler.toml
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_NAME: ${{ inputs.worker_name }}
+          ROUTE_PREFIX: ${{ inputs.route_prefix }}
+          DOMAIN: ${{ inputs.domain }}
+          D1_DB_ID: ${{ env.D1_DB_ID }}
+          TURNSTILE_SITE_KEY: ${{ env.TURNSTILE_SITE_KEY }}
+        run: |
+          cat > wrangler.toml <<EOF
+          name = "${WORKER_NAME}"
+          main = "src/index.ts"
+          compatibility_date = "2026-09-12"
+          compatibility_flags = ["nodejs_compat"]
+          workers_dev = false
+          preview_urls = false
+          account_id = "${CLOUDFLARE_ACCOUNT_ID}"
+          routes = [{ pattern = "${ROUTE_PREFIX}.${DOMAIN}/*", zone_name = "${DOMAIN}" }]
+
+          [vars]
+          SITE_ID = "${WORKER_NAME}"
+          ADMIN_USER = "admin"
+          APP_DOMAIN = "${ROUTE_PREFIX}.${DOMAIN}"
+          TURNSTILE_SITE_KEY = "${TURNSTILE_SITE_KEY}"
+          PUBLIC_UPLOAD_PATH = "uploads/public/"
+          PUBLIC_UPLOAD_MAX_BYTES = "2147483648"
+
+          [[d1_databases]]
+          binding = "META_DB"
+          database_name = "${WORKER_NAME}-meta"
+          database_id = "${D1_DB_ID}"
+          migrations_dir = "database/migrations"
+
+          [observability]
+          enabled = true
+          [observability.logs]
+          invocation_logs = true
+          head_sampling_rate = 1
+          [observability.traces]
+          enabled = true
+          head_sampling_rate = 0.01
+          EOF
+
+          echo "✅ wrangler.toml 已生成"
+
+      - name: 应用 D1 数据库迁移
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 migrations apply META_DB --remote
+          echo "✅ 数据库迁移完成"
+
+      - name: 配置密钥
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ADMIN_PASS: ${{ env.ADMIN_PASS }}
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          TURNSTILE_SECRET: ${{ env.TURNSTILE_SECRET }}
+        run: |
+          echo "$ADMIN_PASS"       | npx wrangler secret put ADMIN_PASS
+          echo "$JWT_SECRET"       | npx wrangler secret put JWT_SECRET
+          echo "$TURNSTILE_SECRET" | npx wrangler secret put TURNSTILE_SECRET
+          echo "✅ 密钥配置完成"
+
+      - name: 部署 Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler deploy
+          echo "✅ Worker 部署完成"
+
+      - name: 部署成功
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════╗"
+          echo "║           🎉 部署成功！                  ║"
+          echo "╚══════════════════════════════════════════╝"
+          echo ""
+          echo "访问地址: https://${{ inputs.route_prefix }}.${{ inputs.domain }}"
+          echo "管理员: admin"
+          echo "密码: ${{ env.ADMIN_PASS }}"
+          echo ""
+          echo "⚠️  请妥善保存管理员密码！"

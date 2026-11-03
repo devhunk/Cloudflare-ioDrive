@@ -73,45 +73,74 @@ ioDrive 是一个完全运行在 Cloudflare 边缘网络上的轻量级文件管
 
 > Cloudflare 没有像 Vercel 那样的原生 Deploy Button，因此采用 **Fork → 配置 → 一键部署** 模式。只需点击上方按钮 Fork 仓库，然后在 Actions 页面点击「Run workflow」即可完成部署。
 
-### 📋 部署前准备
+### 🎯 两种部署方式
 
-在开始部署之前，你需要准备以下资源：
+| 方式 | 难度 | 所需时间 | 适用场景 |
+|------|------|----------|----------|
+| **简化部署** ⭐ | ⭐ 极简 | 5 分钟 | 快速体验，不要求完整功能 |
+| **完整部署** | ⭐⭐⭐ 中等 | 15 分钟 | 生产环境，需要完整功能 |
 
-| 资源 | 说明 | 预计耗时 |
-|------|------|----------|
-| Cloudflare 账号 | 免费账号即可 | 2 分钟 |
-| 域名 | 托管在 Cloudflare DNS 上 | 已有域名 0 分钟 |
-| R2 存储桶 | 对象存储 | 2 分钟 |
-| D1 数据库 | 元数据存储 | 1 分钟 |
-| Turnstile 站点 | 人机验证 | 2 分钟 |
-| API 令牌 | Workers 和 D1 操作权限 | 3 分钟 |
+---
 
-**总计约 10 分钟准备时间**
+### 方式一：简化部署（推荐新手）⭐
 
-### 🎯 快速部署流程
+只需配置 **3 个 Secrets**，其他资源自动创建！
 
-1. **Fork 仓库** → 点击上方按钮
-2. **准备资源** → 按照下方详细步骤创建 R2、D1、Turnstile
-3. **配置 Secrets** → 在 GitHub 仓库设置中添加 10 个必需的 Secret
-4. **运行部署** → 在 Actions 页面点击「Run workflow」
-5. **验证部署** → 访问域名测试功能
+#### 步骤 1：Fork 仓库
 
-> 💡 **新手推荐**：如果你是第一次部署，建议查看 [详细部署指南](docs/DEPLOYMENT_GUIDE.md)，那里有更详细的步骤说明和故障排查。
+点击上方 **⚡ Deploy to Cloudflare** 按钮，将仓库 Fork 到你的 GitHub 账号。
 
-详细步骤请展开下方「完整部署流程」。
+#### 步骤 2：配置 3 个必需 Secrets
+
+进入你 Fork 后的仓库 → **Settings** → **Secrets and variables** → **Actions**，添加以下 3 个 Secrets：
+
+| Secret 名称 | 说明 | 获取方式 |
+|-------------|------|----------|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API 令牌 | [创建令牌](https://dash.cloudflare.com/profile/api-tokens) → 使用「编辑 Cloudflare Workers」模板（需包含 Workers、D1、R2 权限） |
+| `CLOUDFLARE_ACCOUNT_ID` | 账户 ID | Cloudflare Dashboard 首页 → 右侧 API 区域 |
+| `DOMAIN` | 你的域名 | 你的域名（如 `example.com`） |
+
+> 💡 **提示**：简化部署会自动创建 R2 存储桶、D1 数据库、Turnstile 站点，并生成管理员密码和密钥。
+
+#### 步骤 3：一键部署
+
+1. 进入仓库 → **Actions** → **🚀 简化部署 ioDrive**
+2. 点击 **Run workflow**
+3. 填写配置参数：
+   - **域名**：你的域名（如 `example.com`）
+   - **路由前缀**：子域名前缀（如 `drive`，最终访问 `drive.example.com`）
+   - **Worker 名称**：默认 `iodrive`，可自定义
+4. 点击 **运行**
+5. 等待部署完成（约 2-3 分钟）
+6. 部署成功后会显示访问地址和管理员密码
+
+#### 功能说明
+
+简化部署的 ioDrive 支持以下功能：
+- ✅ 文件上传和下载
+- ✅ 文件管理（创建文件夹、删除、移动）
+- ✅ 分享链接
+- ✅ 上传日志和下载日志
+- ✅ 公共上传（需 Turnstile 验证）
+- ✅ Turnstile 人机验证
+- ❌ 预签名下载（需要手动配置 R2 API 令牌）
+- ❌ S3 多后端同步（需要手动配置）
+
+如需启用预签名下载或 S3 同步，请使用「完整部署」或手动添加相应 Secrets。
+
+---
 
 <details>
 <summary><b>📖 完整部署流程（点击展开）</b></summary>
 
-### 第一步：Fork 仓库
+<details>
+<summary><b>📖 完整部署流程（点击展开）</b></summary>
 
-点击上方 **⚡ Deploy to Cloudflare** 按钮，将仓库 Fork 到你的 GitHub 账号。
-
-### 第二步：准备 Cloudflare 资源
+### 第一步：准备 Cloudflare 资源
 
 在配置 GitHub Secrets 之前，你需要先准备好以下 Cloudflare 资源：
 
-#### 2.1 创建 R2 存储桶
+#### 1.1 创建 R2 存储桶
 
 1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)
 2. 进入 **R2** → **创建存储桶**
@@ -119,14 +148,14 @@ ioDrive 是一个完全运行在 Cloudflare 边缘网络上的轻量级文件管
 4. 存储桶创建后，进入 **管理 R2 API 令牌** → 创建 API 令牌
 5. 记录 **Access Key ID** 和 **Secret Access Key**
 
-#### 2.2 创建 D1 数据库
+#### 1.2 创建 D1 数据库
 
 1. 进入 Cloudflare Dashboard → **Workers & Pages** → **D1**
 2. 点击 **创建数据库**
 3. 填写数据库名称（如 `iodrive-meta`）
 4. 创建完成后，记录 **数据库 ID**（格式：`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`）
 
-#### 2.3 创建 Turnstile 站点
+#### 1.3 创建 Turnstile 站点
 
 1. 进入 [Turnstile 页面](https://dash.cloudflare.com/?to=/:account/turnstile)
 2. 点击 **添加站点**
@@ -134,7 +163,7 @@ ioDrive 是一个完全运行在 Cloudflare 边缘网络上的轻量级文件管
 4. 域名填写你计划使用的域名（如 `drive.example.com`）
 5. 记录 **站点密钥** 和 **密钥**
 
-#### 2.4 获取 Cloudflare API 令牌
+#### 1.4 获取 Cloudflare API 令牌
 
 1. 进入 [我的个人资料](https://dash.cloudflare.com/profile/api-tokens)
 2. 点击 **创建令牌**
@@ -145,26 +174,26 @@ ioDrive 是一个完全运行在 Cloudflare 边缘网络上的轻量级文件管
    - Account - D1 - Edit（用于自动迁移数据库）
 5. 记录令牌值
 
-#### 2.5 获取账户 ID
+#### 1.5 获取账户 ID
 
 进入 Cloudflare Dashboard 首页，右侧 **API** 区域可看到 **账户 ID**
 
-### 第三步：配置 GitHub Secrets
+### 第二步：配置 GitHub Secrets
 
 进入你 Fork 后的仓库 → **Settings** → **Secrets and variables** → **Actions**，添加以下 Secrets：
 
 | Secret 名称 | 说明 | 获取方式 |
 |-------------|------|----------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API 令牌 | 2.4 步骤创建的令牌 |
-| `CLOUDFLARE_ACCOUNT_ID` | 账户 ID | 2.5 步骤获取的账户 ID |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API 令牌 | 1.4 步骤创建的令牌 |
+| `CLOUDFLARE_ACCOUNT_ID` | 账户 ID | 1.5 步骤获取的账户 ID |
 | `CLOUDFLARE_D1_API_TOKEN` | D1 数据库操作令牌 | 使用「编辑 Cloudflare Workers」模板（需包含 D1 Edit 权限） |
-| `META_DB_ID` | D1 数据库 ID | 2.2 步骤创建的数据库 ID |
+| `META_DB_ID` | D1 数据库 ID | 1.2 步骤创建的数据库 ID |
 | `ADMIN_PASS` | 管理员密码 | 自行设置（建议使用强密码） |
 | `JWT_SECRET` | JWT 签名密钥 | 运行 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `TURNSTILE_SECRET` | Turnstile 密钥 | 2.3 步骤获取的密钥 |
-| `TURNSTILE_SITE_KEY` | Turnstile 站点密钥 | 2.3 步骤获取的站点密钥 |
-| `R2_ACCESS_KEY` | R2 Access Key | 2.1 步骤获取的 Access Key ID |
-| `R2_SECRET_KEY` | R2 Secret Key | 2.1 步骤获取的 Secret Access Key |
+| `TURNSTILE_SECRET` | Turnstile 密钥 | 1.3 步骤获取的密钥 |
+| `TURNSTILE_SITE_KEY` | Turnstile 站点密钥 | 1.3 步骤获取的站点密钥 |
+| `R2_ACCESS_KEY` | R2 Access Key | 1.1 步骤获取的 Access Key ID |
+| `R2_SECRET_KEY` | R2 Secret Key | 1.1 步骤获取的 Secret Access Key |
 
 > 💡 **可选 Secrets**（仅在启用 S3 同步时需要）：
 > - `S3_ACCESS_KEY` - S3 Access Key
@@ -214,9 +243,11 @@ ioDrive 是一个完全运行在 Cloudflare 边缘网络上的轻量级文件管
 
 </details>
 
-### 方式一：Setup 脚本（推荐本地部署）
+---
 
-交互式引导配置，自动生成配置文件，一条命令完成部署：
+### 方式三：本地部署（高级用户）
+
+如果你更喜欢本地部署，可以使用 setup.sh 脚本：
 
 ```bash
 git clone https://github.com/Mareixcode/Cloudflare-Drive.git
@@ -232,48 +263,6 @@ chmod +x setup.sh
 - ✅ 配置 Turnstile 人机验证
 - ✅ 生成 `wrangler.toml` 和 `.dev.vars`
 - ✅ 自动创建 R2 存储桶并部署
-
-### 方式二：GitHub Actions 一键部署（推荐持续部署）
-
-> ⚠️ 使用前须先 **[Fork 本仓库](https://github.com/Mareixcode/Cloudflare-Drive/fork)** 到你的 GitHub 账号
-
-**前置准备：配置 Cloudflare 资源**
-
-在配置 GitHub Secrets 之前，请参考上方「完整部署流程」的第二步，先准备好：
-- R2 存储桶及其 API 令牌
-- D1 数据库及其 ID
-- Turnstile 站点密钥
-- Cloudflare API 令牌（需包含 D1 Edit 权限）
-- Cloudflare 账户 ID
-
-**第一步：配置 GitHub Secrets**
-
-进入仓库 → **Settings** → **Secrets and variables** → **Actions**，添加以下 Secrets：
-
-| Secret 名称 | 说明 | 获取方式 |
-|-------------|------|----------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API 令牌 | 使用「编辑 Cloudflare Workers」模板（需包含 D1 Edit 权限） |
-| `CLOUDFLARE_ACCOUNT_ID` | 账户 ID | Dashboard 首页 → 右侧 API 区域 |
-| `CLOUDFLARE_D1_API_TOKEN` | D1 数据库操作令牌 | 使用「编辑 Cloudflare Workers」模板（需包含 D1 Edit 权限） |
-| `META_DB_ID` | D1 数据库 ID | D1 数据库创建后显示的 ID |
-| `ADMIN_PASS` | 管理员密码 | 自行设置 |
-| `JWT_SECRET` | JWT 签名密钥 | 运行 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `TURNSTILE_SECRET` | Turnstile 密钥 | Turnstile → 你的站点 → API 密钥 |
-| `TURNSTILE_SITE_KEY` | Turnstile 站点密钥 | Turnstile → 你的站点 → 站点密钥 |
-| `R2_ACCESS_KEY` | R2 Access Key | R2 → 管理 R2 API 令牌 |
-| `R2_SECRET_KEY` | R2 Secret Key | 同上 |
-
-> 💡 **可选 Secrets**：
-> - `S3_ACCESS_KEY` / `S3_SECRET_KEY` - S3 同步密钥
-> - `CACHE_KV_ID` - KV 缓存命名空间 ID
-
-**第二步：触发部署**
-
-进入仓库 → **Actions** → **🚀 一键部署 ioDrive** → **Run workflow**，填写配置参数后点击运行。
-
-**后续更新**
-
-配置完成后，每次推送到 `main` 分支都会自动触发部署（通过已有的 `deploy.yml` 工作流）。
 
 ---
 
