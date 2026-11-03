@@ -12,7 +12,7 @@
     "cf-types": "wrangler types"
   },
   "dependencies": {
-    "hono": "^4.0.0",
+    "hono": "^4.13.7",
     "jose": "^6.0.0"
   },
   "devDependencies": {
